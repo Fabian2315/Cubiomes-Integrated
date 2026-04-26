@@ -20,9 +20,37 @@ public final class WorldLauncher {
         }
 
         // Fallback keeps workflow fast even when internals shift across mappings.
-        CreateWorldScreen.show(client, fallbackParent);
+        openCreateWorldFallback(client, fallbackParent);
         if (client.player != null) {
             client.player.sendMessage(Text.literal("Seed copied to clipboard: " + seed), false);
+        }
+    }
+
+    private static void openCreateWorldFallback(MinecraftClient client, Screen fallbackParent) {
+        try {
+            Method showMethod = CreateWorldScreen.class.getMethod("show", MinecraftClient.class, Screen.class);
+            showMethod.invoke(null, client, fallbackParent);
+            return;
+        } catch (ReflectiveOperationException ignored) {
+        }
+
+        try {
+            Method createWithParent = CreateWorldScreen.class.getMethod("create", Screen.class);
+            Object screen = createWithParent.invoke(null, fallbackParent);
+            if (screen instanceof Screen createWorldScreen) {
+                client.setScreen(createWorldScreen);
+                return;
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
+
+        try {
+            Method createWithClientAndParent = CreateWorldScreen.class.getMethod("create", MinecraftClient.class, Screen.class);
+            Object screen = createWithClientAndParent.invoke(null, client, fallbackParent);
+            if (screen instanceof Screen createWorldScreen) {
+                client.setScreen(createWorldScreen);
+            }
+        } catch (ReflectiveOperationException ignored) {
         }
     }
 
