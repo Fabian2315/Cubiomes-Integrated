@@ -12,4 +12,4 @@ when searching for top block didnt stop at 250 passed seeds
     - fix this
 
 Generally fix block finder and minecrafts chunk generator
-
+    - needs hoock to minecrafts chunck generator
