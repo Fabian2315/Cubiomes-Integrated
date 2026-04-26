@@ -27,11 +27,11 @@ import net.minecraft.text.Text;
 
 public final class CubiomesDashboardScreen extends Screen {
     private static final int FILTER_LIST_X = 16;
-    private static final int FILTER_LIST_Y = 150;
+    private static final int FILTER_LIST_Y = 168;
     private static final int FILTER_ROW_HEIGHT = 11;
     private static final int FILTER_ROWS_VISIBLE = 10;
     private static final int RESULTS_X = 430;
-    private static final int RESULTS_Y = 150;
+    private static final int RESULTS_Y = 168;
     private static final int RESULTS_ROW_HEIGHT = 11;
     private static final int RESULTS_VISIBLE = 14;
 
@@ -88,6 +88,7 @@ public final class CubiomesDashboardScreen extends Screen {
         strideField = addField(left + 64, top + 24, 50, "1");
         maxResultsField = addField(left + 240, top + 24, 70, "250");
         selectedFilterEditorField = addField(left + 100, top + 56, 420, "");
+        selectedFilterEditorField.setMaxLength(2048);
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Add Biome"), b -> addFilter(new BiomeAtFilter())).dimensions(left, top + 84, 92, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Add Structure"), b -> addFilter(new StructureFilterEntry())).dimensions(left + 96, top + 84, 106, 20).build());
@@ -427,7 +428,7 @@ public final class CubiomesDashboardScreen extends Screen {
             }
         }
 
-        context.drawText(textRenderer, Text.literal("Pipeline: Cubiomes filters=" + enabledCubiomes + " | Minecraft handoff filters=" + enabledMinecraft), left, 122, 0xFFD37A, false);
+        context.drawText(textRenderer, Text.literal("Pipeline: Cubiomes filters=" + enabledCubiomes + " | Minecraft handoff filters=" + enabledMinecraft), left, 140, 0xFFD37A, false);
 
         int y = 408;
         context.drawText(textRenderer, Text.literal("Seeds scanned: " + progress.scanned()), left, y, 0xD0D0D0, false);

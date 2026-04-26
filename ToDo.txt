@@ -1,0 +1,15 @@
+viewer error message: [16:27:33] [Render thread/WARN]: Desktop browsing is not supported on this platform.
+    - doesnt open up 
+
+add biome and structure selectro instead of biome ids and structure names
+
+generate and join only copies the seed to clipboard
+    - make it so it generates and joins
+
+only works when in a world
+
+when searching for top block didnt stop at 250 passed seeds
+    - fix this
+
+Generally fix block finder and minecrafts chunk generator
+
