@@ -7,6 +7,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
+import dev.cubiomes.integrated.client.world.MinecraftTerrainVerifier;
+import dev.cubiomes.integrated.client.world.WorldLauncher;
 import dev.cubiomes.integrated.nativebridge.NativeCubiomes;
 import dev.cubiomes.integrated.nativebridge.NativeCubiomes.StructureType;
 import dev.cubiomes.integrated.search.SearchConfig;
@@ -16,8 +18,6 @@ import dev.cubiomes.integrated.search.SeedSearcher;
 import dev.cubiomes.integrated.search.filter.BiomeFilter;
 import dev.cubiomes.integrated.search.filter.StructureFilter;
 import dev.cubiomes.integrated.search.filter.TerrainFilter;
-import dev.cubiomes.integrated.client.world.MinecraftTerrainVerifier;
-import dev.cubiomes.integrated.client.world.WorldLauncher;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
