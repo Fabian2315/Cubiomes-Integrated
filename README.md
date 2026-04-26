@@ -1,15 +1,20 @@
-# Cubiomes Integrated (Fabric 1.21.1)
+# Cubiomes Integrated
 
-Cubiomes Integrated embeds the C `cubiomes` library into a Fabric mod and exposes an in-game seed-search dashboard.
+Cubiomes Integrated is a Fabric 1.21.1 mod that embeds the C `cubiomes` library and exposes an in-game seed search dashboard.
 
-## What is implemented
+## Features
 
-- Fabric 1.21.1 mod scaffold (Java 21)
-- JNA bridge (`NativeCubiomes`) to a native `cubiomes_jna` dynamic library
-- Two-stage seed search engine (`SeedSearcher`) using `CompletableFuture` + background worker pool
-- Hybrid guardrail for Stage 2 terrain filtering with configurable Java-verification budget
-- Dashboard screen with structure, biome, and terrain controls
-- Generate-and-join flow with direct-launch probe and create-world fallback
+- Fabric 1.21.1 mod scaffold targeting Java 21
+- JNA bridge to a native `cubiomes_jna` library
+- Two-stage seed search pipeline backed by background workers
+- Structure, biome, and terrain filters in the dashboard UI
+- Generate-and-join flow with a direct-launch probe and a create-world fallback
+
+## Requirements
+
+- Java 21
+- CMake 3.16 or newer
+- A local Fabric development environment
 
 ## Build native library
 
@@ -20,36 +25,40 @@ cmake -S native -B native/build
 cmake --build native/build --config Release
 ```
 
-On macOS, the output is typically:
+The expected output is:
 
-- `native/build/libcubiomes_jna.dylib`
+- macOS: `native/build/libcubiomes_jna.dylib`
+- Linux: `native/build/libcubiomes_jna.so`
+- Windows: `native/build/cubiomes_jna.dll`
 
-Configure the path for JNA if needed:
+If you want to point the mod at a locally built binary, set either:
 
 ```bash
 export CUBIOMES_NATIVE_LIB="$(pwd)/native/build/libcubiomes_jna.dylib"
 ```
 
-or pass as JVM property:
+or:
 
 ```bash
 -Dcubiomes.native.lib=/absolute/path/to/libcubiomes_jna.dylib
 ```
 
-## Run dev client
+## Run the dev client
 
 ```bash
 ./gradlew runClient
 ```
 
-In-game, press `O` to open the dashboard.
+In game, press `O` to open the Cubiomes dashboard.
 
-## Memory safety
+## Build the mod
 
-- Native generator handles are wrapped in `AutoCloseable` and cleaned by `Cleaner`
-- Search cancellation stops background work promptly
-- Native objects are released when search ends or UI is closed
+```bash
+./gradlew build
+```
 
-## Stage 2 terrain note
+## Notes
 
-The terrain verifier class contains a documented hook point for exact `ChunkGenerator` integration and currently runs as a lightweight placeholder to keep the client responsive while developing full block-state simulation.
+- Native generator handles are wrapped in `AutoCloseable` and cleaned up automatically.
+- Search cancellation stops background work promptly.
+- Terrain verification currently uses a lightweight placeholder so the client stays responsive while the full block-state integration is developed.
