@@ -1,7 +1,10 @@
 package dev.cubiomes.integrated.client.screen;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import dev.cubiomes.integrated.nativebridge.NativeCubiomes;
@@ -15,6 +18,7 @@ import dev.cubiomes.integrated.search.filter.StructureFilter;
 import dev.cubiomes.integrated.search.filter.TerrainFilter;
 import dev.cubiomes.integrated.client.world.MinecraftTerrainVerifier;
 import dev.cubiomes.integrated.client.world.WorldLauncher;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -22,10 +26,33 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
 public final class CubiomesDashboardScreen extends Screen {
-    private enum Tab {
-        STRUCTURES,
-        BIOMES,
-        TERRAIN
+    private static final int FILTER_LIST_X = 16;
+    private static final int FILTER_LIST_Y = 150;
+    private static final int FILTER_ROW_HEIGHT = 11;
+    private static final int FILTER_ROWS_VISIBLE = 10;
+    private static final int RESULTS_X = 430;
+    private static final int RESULTS_Y = 150;
+    private static final int RESULTS_ROW_HEIGHT = 11;
+    private static final int RESULTS_VISIBLE = 14;
+
+    private enum FilterType {
+        BIOME_AT,
+        STRUCTURE,
+        SPAWN_TOP_BLOCK
+    }
+
+    private interface EditableFilter {
+        FilterType type();
+
+        boolean enabled();
+
+        void setEnabled(boolean enabled);
+
+        String summary();
+
+        String toEditorString();
+
+        void applyEditorString(String editorString);
     }
 
     private final SeedSearcher searcher = new SeedSearcher();
@@ -33,51 +60,58 @@ public final class CubiomesDashboardScreen extends Screen {
 
     private TextFieldWidget startSeedField;
     private TextFieldWidget endSeedField;
-    private TextFieldWidget biomeIdField;
-    private TextFieldWidget structureTypeField;
-    private TextFieldWidget minXField;
-    private TextFieldWidget maxXField;
-    private TextFieldWidget minZField;
-    private TextFieldWidget maxZField;
-    private TextFieldWidget topBlockField;
-    private TextFieldWidget terrainBatchField;
+    private TextFieldWidget strideField;
+    private TextFieldWidget maxResultsField;
+    private TextFieldWidget selectedFilterEditorField;
 
-    private Tab activeTab = Tab.STRUCTURES;
     private CompletableFuture<List<SearchResult>> inFlight;
+    private final List<EditableFilter> filters = new ArrayList<>();
     private final List<SearchResult> results = new ArrayList<>();
     private SearchProgress progress = new SearchProgress(0, 0, 0, 0);
+    private int selectedFilterIndex = -1;
+    private int selectedResultIndex = -1;
+    private boolean seedMapPopupEnabled = true;
+    private String statusText = "Ready";
 
     public CubiomesDashboardScreen(Text title) {
         super(title);
+        initializeDefaultFilters();
     }
 
     @Override
     protected void init() {
         int left = 16;
-        int top = 24;
+        int top = 28;
 
-        startSeedField = addField(left, top, "0");
-        endSeedField = addField(left + 130, top, "1000000");
-        biomeIdField = addField(left, top + 30, "1");
-        structureTypeField = addField(left + 130, top + 30, StructureType.VILLAGE.name());
-        minXField = addField(left, top + 60, "-512");
-        maxXField = addField(left + 65, top + 60, "512");
-        minZField = addField(left + 130, top + 60, "-512");
-        maxZField = addField(left + 195, top + 60, "512");
-        topBlockField = addField(left, top + 90, "minecraft:mossy_cobblestone");
-        terrainBatchField = addField(left + 210, top + 90, "64");
+        startSeedField = addField(left + 64, top, 110, "0");
+        endSeedField = addField(left + 240, top, 110, "1000000");
+        strideField = addField(left + 64, top + 24, 50, "1");
+        maxResultsField = addField(left + 240, top + 24, 70, "250");
+        selectedFilterEditorField = addField(left + 100, top + 56, 420, "");
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Structures"), b -> activeTab = Tab.STRUCTURES).dimensions(left, height - 28, 90, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Biomes"), b -> activeTab = Tab.BIOMES).dimensions(left + 94, height - 28, 70, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Terrain"), b -> activeTab = Tab.TERRAIN).dimensions(left + 168, height - 28, 80, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Add Biome"), b -> addFilter(new BiomeAtFilter())).dimensions(left, top + 84, 92, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Add Structure"), b -> addFilter(new StructureFilterEntry())).dimensions(left + 96, top + 84, 106, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Add Top Block"), b -> addFilter(new SpawnTopBlockFilter())).dimensions(left + 206, top + 84, 110, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Toggle"), b -> toggleSelectedFilter()).dimensions(left + 320, top + 84, 70, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Remove"), b -> removeSelectedFilter()).dimensions(left + 394, top + 84, 70, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Up"), b -> moveSelectedFilter(-1)).dimensions(left + 468, top + 84, 42, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Down"), b -> moveSelectedFilter(1)).dimensions(left + 514, top + 84, 56, 20).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Start Search"), b -> startSearch()).dimensions(width - 240, 24, 110, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> cancelSearch()).dimensions(width - 124, 24, 90, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Generate & Join"), b -> generateAndJoin()).dimensions(width - 240, 50, 206, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Apply Selected"), b -> applySelectedFilterEdits()).dimensions(left + 526, top + 56, 112, 20).build());
+
+        addDrawableChild(ButtonWidget.builder(Text.literal("Start Search"), b -> startSearch()).dimensions(width - 246, 24, 110, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> cancelSearch()).dimensions(width - 130, 24, 90, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Generate & Join"), b -> generateAndJoin()).dimensions(width - 246, 50, 206, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Open Seed Map"), b -> openSeedMapForSelection()).dimensions(width - 246, 76, 102, 20).build());
+        addDrawableChild(ButtonWidget.builder(seedMapPopupButtonLabel(), this::toggleSeedMapPopup).dimensions(width - 140, 76, 100, 20).build());
+
+        if (selectedFilterIndex < 0 && !filters.isEmpty()) {
+            selectFilter(0);
+        }
     }
 
-    private TextFieldWidget addField(int x, int y, String value) {
-        TextFieldWidget field = new TextFieldWidget(textRenderer, x, y, 60, 18, Text.empty());
+    private TextFieldWidget addField(int x, int y, int width, String value) {
+        TextFieldWidget field = new TextFieldWidget(textRenderer, x, y, width, 18, Text.empty());
         field.setText(value);
         addDrawableChild(field);
         return field;
@@ -85,51 +119,89 @@ public final class CubiomesDashboardScreen extends Screen {
 
     private void startSearch() {
         cancelSearch();
+        applySelectedFilterEdits();
         results.clear();
+        selectedResultIndex = -1;
         progress = new SearchProgress(0, 0, 0, 0);
 
         SearchConfig config = buildConfig();
+        statusText = config.requiresMinecraftHandoff()
+            ? "Search started: cubiomes prefilter + Minecraft handoff"
+            : "Search started: cubiomes-only pipeline";
+
         inFlight = searcher.start(
             config,
             terrainVerifier,
             p -> progress = p,
-            results::add
+            result -> {
+                results.add(result);
+                if (selectedResultIndex < 0) {
+                    selectedResultIndex = 0;
+                }
+            }
         );
     }
 
     private SearchConfig buildConfig() {
         long startSeed = parseLong(startSeedField.getText(), 0L);
         long endSeed = parseLong(endSeedField.getText(), startSeed + 1_000_000L);
-        int biomeId = parseInt(biomeIdField.getText(), 1);
+        int stride = Math.max(1, parseInt(strideField.getText(), 1));
+        int maxResults = Math.max(1, parseInt(maxResultsField.getText(), 250));
 
-        StructureType structureType = parseStructure(structureTypeField.getText());
-        StructureFilter structureFilter = new StructureFilter(
-            structureType,
-            parseInt(minXField.getText(), -512),
-            parseInt(maxXField.getText(), 512),
-            parseInt(minZField.getText(), -512),
-            parseInt(maxZField.getText(), 512)
-        );
+        List<BiomeFilter> biomeFilters = new ArrayList<>();
+        List<StructureFilter> structureFilters = new ArrayList<>();
+        List<TerrainFilter> terrainFilters = new ArrayList<>();
 
-        TerrainFilter terrainFilter = new TerrainFilter(
-            activeTab == Tab.TERRAIN,
-            topBlockField.getText(),
-            Integer.MIN_VALUE,
-            Integer.MAX_VALUE,
-            true,
-            parseInt(terrainBatchField.getText(), 64)
-        );
+        for (EditableFilter filter : filters) {
+            if (filter instanceof BiomeAtFilter biome) {
+                biomeFilters.add(new BiomeFilter(
+                    biome.enabled,
+                    biome.biomeId,
+                    biome.scale,
+                    biome.x,
+                    biome.y,
+                    biome.z
+                ));
+                continue;
+            }
+
+            if (filter instanceof StructureFilterEntry structure) {
+                structureFilters.add(new StructureFilter(
+                    structure.enabled,
+                    structure.structureType,
+                    structure.regionX,
+                    structure.regionZ,
+                    structure.minX,
+                    structure.maxX,
+                    structure.minZ,
+                    structure.maxZ
+                ));
+                continue;
+            }
+
+            if (filter instanceof SpawnTopBlockFilter spawnTop) {
+                terrainFilters.add(new TerrainFilter(
+                    spawnTop.enabled,
+                    spawnTop.blockId,
+                    spawnTop.spawnRadius,
+                    spawnTop.minTopY,
+                    spawnTop.maxTopY,
+                    true,
+                    Math.max(1, spawnTop.javaVerificationBudget)
+                ));
+            }
+        }
 
         return new SearchConfig(
             startSeed,
             Math.max(startSeed + 1, endSeed),
-            1,
-            250,
+            stride,
+            maxResults,
             NativeCubiomes.mcVersion1211(),
             0,
-            List.of(structureFilter),
-            List.of(new BiomeFilter(biomeId, 4, 0, 0, 0)),
-            terrainFilter
+            structureFilters,
+            biomeFilters,
+            terrainFilters
         );
     }
 
@@ -139,13 +211,185 @@ public final class CubiomesDashboardScreen extends Screen {
             inFlight.cancel(true);
             inFlight = null;
         }
+        statusText = "Search cancelled";
     }
 
     private void generateAndJoin() {
         if (client == null || results.isEmpty()) {
             return;
         }
-        WorldLauncher.launchOrOpenCreateWorld(client, results.get(0).seed(), this);
+        SearchResult result = getSelectedResult();
+        if (result == null) {
+            return;
+        }
+        WorldLauncher.launchOrOpenCreateWorld(client, result.seed(), this);
+    }
+
+    private void openSeedMapForSelection() {
+        SearchResult result = getSelectedResult();
+        if (result == null || client == null) {
+            return;
+        }
+
+        String url = SeedMapViewer.buildSeedMapUrl(result.seed());
+        if (seedMapPopupEnabled) {
+            client.setScreen(new SeedMapConfirmScreen(this, url));
+            return;
+        }
+
+        if (SeedMapViewer.openInBrowser(url)) {
+            statusText = "Opened seed map for seed " + result.seed();
+        } else {
+            statusText = "Failed to open browser for seed map";
+        }
+    }
+
+    private SearchResult getSelectedResult() {
+        if (results.isEmpty()) {
+            return null;
+        }
+        if (selectedResultIndex < 0 || selectedResultIndex >= results.size()) {
+            selectedResultIndex = 0;
+        }
+        return results.get(selectedResultIndex);
+    }
+
+    private void addFilter(EditableFilter filter) {
+        filters.add(filter);
+        selectFilter(filters.size() - 1);
+        statusText = "Added filter: " + typeLabel(filter.type());
+    }
+
+    private void toggleSelectedFilter() {
+        EditableFilter filter = getSelectedFilter();
+        if (filter == null) {
+            return;
+        }
+        filter.setEnabled(!filter.enabled());
+        statusText = "Filter " + typeLabel(filter.type()) + " is now " + (filter.enabled() ? "ON" : "OFF");
+    }
+
+    private void removeSelectedFilter() {
+        EditableFilter filter = getSelectedFilter();
+        if (filter == null) {
+            return;
+        }
+        filters.remove(selectedFilterIndex);
+        if (filters.isEmpty()) {
+            selectedFilterIndex = -1;
+            selectedFilterEditorField.setText("");
+        } else {
+            selectFilter(Math.min(selectedFilterIndex, filters.size() - 1));
+        }
+        statusText = "Removed filter: " + typeLabel(filter.type());
+    }
+
+    private void moveSelectedFilter(int delta) {
+        EditableFilter filter = getSelectedFilter();
+        if (filter == null) {
+            return;
+        }
+
+        int target = selectedFilterIndex + delta;
+        if (target < 0 || target >= filters.size()) {
+            return;
+        }
+
+        filters.set(selectedFilterIndex, filters.get(target));
+        filters.set(target, filter);
+        selectFilter(target);
+        statusText = "Reordered filters";
+    }
+
+    private void applySelectedFilterEdits() {
+        EditableFilter filter = getSelectedFilter();
+        if (filter == null) {
+            return;
+        }
+
+        try {
+            filter.applyEditorString(selectedFilterEditorField.getText());
+            selectedFilterEditorField.setText(filter.toEditorString());
+            statusText = "Updated filter: " + typeLabel(filter.type());
+        } catch (IllegalArgumentException exception) {
+            statusText = "Invalid filter format: " + exception.getMessage();
+        }
+    }
+
+    private EditableFilter getSelectedFilter() {
+        if (selectedFilterIndex < 0 || selectedFilterIndex >= filters.size()) {
+            return null;
+        }
+        return filters.get(selectedFilterIndex);
+    }
+
+    private void selectFilter(int index) {
+        if (index < 0 || index >= filters.size()) {
+            return;
+        }
+        selectedFilterIndex = index;
+        selectedFilterEditorField.setText(filters.get(index).toEditorString());
+    }
+
+    private void initializeDefaultFilters() {
+        filters.add(new BiomeAtFilter());
+        filters.add(new StructureFilterEntry());
+        SpawnTopBlockFilter spawnTop = new SpawnTopBlockFilter();
+        spawnTop.enabled = false;
+        filters.add(spawnTop);
+    }
+
+    private static Map<String, String> parseEditorMap(String editorString) {
+        Map<String, String> values = new HashMap<>();
+        for (String part : editorString.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+
+            int equalsIndex = trimmed.indexOf('=');
+            if (equalsIndex <= 0 || equalsIndex == trimmed.length() - 1) {
+                throw new IllegalArgumentException("use key=value pairs");
+            }
+
+            String key = trimmed.substring(0, equalsIndex).trim().toLowerCase(Locale.ROOT);
+            String value = trimmed.substring(equalsIndex + 1).trim();
+            values.put(key, value);
+        }
+        return values;
+    }
+
+    private static int requiredInt(Map<String, String> values, String key, int fallback) {
+        String raw = values.get(key);
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        return parseInt(raw, fallback);
+    }
+
+    private static String requiredString(Map<String, String> values, String key, String fallback) {
+        String raw = values.get(key);
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        return raw;
+    }
+
+    private static String typeLabel(FilterType type) {
+        return switch (type) {
+            case BIOME_AT -> "Biome";
+            case STRUCTURE -> "Structure";
+            case SPAWN_TOP_BLOCK -> "Spawn Top Block";
+        };
+    }
+
+    private Text seedMapPopupButtonLabel() {
+        return Text.literal(seedMapPopupEnabled ? "Popup: ON" : "Popup: OFF");
+    }
+
+    private void toggleSeedMapPopup(ButtonWidget button) {
+        seedMapPopupEnabled = !seedMapPopupEnabled;
+        button.setMessage(seedMapPopupButtonLabel());
     }
 
     @Override
@@ -161,33 +405,92 @@ public final class CubiomesDashboardScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
 
         int left = 16;
-        int y = 8;
 
-        context.drawText(textRenderer, Text.literal("Cubiomes Integrated Dashboard"), left, y, 0xFFFFFF, true);
-        y += 104;
+        context.drawText(textRenderer, Text.literal("Cubiomes Integrated Dashboard"), left, 8, 0xFFFFFF, true);
 
-        context.drawText(textRenderer, Text.literal("Active Tab: " + activeTab), left, y, 0xD0D0D0, false);
-        y += 12;
+        context.drawText(textRenderer, Text.literal("Start"), left, 32, 0xD0D0D0, false);
+        context.drawText(textRenderer, Text.literal("End"), left + 186, 32, 0xD0D0D0, false);
+        context.drawText(textRenderer, Text.literal("Stride"), left, 56, 0xD0D0D0, false);
+        context.drawText(textRenderer, Text.literal("Max Results"), left + 186, 56, 0xD0D0D0, false);
+        context.drawText(textRenderer, Text.literal("Edit Selected Filter (key=value, comma-separated)"), left, 80, 0xD0D0D0, false);
+
+        int enabledCubiomes = 0;
+        int enabledMinecraft = 0;
+        for (EditableFilter filter : filters) {
+            if (!filter.enabled()) {
+                continue;
+            }
+            if (filter.type() == FilterType.SPAWN_TOP_BLOCK) {
+                enabledMinecraft++;
+            } else {
+                enabledCubiomes++;
+            }
+        }
+
+        context.drawText(textRenderer, Text.literal("Pipeline: Cubiomes filters=" + enabledCubiomes + " | Minecraft handoff filters=" + enabledMinecraft), left, 122, 0xFFD37A, false);
+
+        int y = 408;
         context.drawText(textRenderer, Text.literal("Seeds scanned: " + progress.scanned()), left, y, 0xD0D0D0, false);
         y += 12;
         context.drawText(textRenderer, Text.literal("Stage1 passed: " + progress.stage1Passed() + " | Stage2 checked: " + progress.stage2Checked()), left, y, 0xD0D0D0, false);
         y += 12;
         context.drawText(textRenderer, Text.literal("Accepted: " + progress.accepted()), left, y, 0x7CFF7C, false);
         y += 16;
+        context.drawText(textRenderer, Text.literal("Status: " + statusText), left, y, 0x9AD0FF, false);
 
-        if (activeTab == Tab.TERRAIN) {
-            context.drawText(textRenderer, Text.literal("Slow filter warning: block-level checks are expensive and budget-limited."), left, y, 0xFFB347, false);
-            y += 14;
+        context.drawText(textRenderer, Text.literal("Filters (click row to select)"), FILTER_LIST_X, FILTER_LIST_Y - 12, 0xFFFFFF, false);
+        int filterRows = Math.min(FILTER_ROWS_VISIBLE, filters.size());
+        for (int i = 0; i < filterRows; i++) {
+            EditableFilter filter = filters.get(i);
+            String prefix = i == selectedFilterIndex ? "> " : "  ";
+            String state = filter.enabled() ? "ON" : "OFF";
+            String text = prefix + "[" + state + "] " + typeLabel(filter.type()) + " - " + filter.summary();
+            int color = i == selectedFilterIndex ? 0xB5EAEA : 0xD0D0D0;
+            context.drawText(textRenderer, Text.literal(text), FILTER_LIST_X, FILTER_LIST_Y + i * FILTER_ROW_HEIGHT, color, false);
         }
 
-        context.drawText(textRenderer, Text.literal("Results:"), left, y, 0xFFFFFF, false);
-        y += 12;
-
-        int visible = Math.min(12, results.size());
+        context.drawText(textRenderer, Text.literal("Results (click seed to open seed map)"), RESULTS_X, RESULTS_Y - 12, 0xFFFFFF, false);
+        int visible = Math.min(RESULTS_VISIBLE, results.size());
         for (int i = 0; i < visible; i++) {
             SearchResult result = results.get(i);
-            context.drawText(textRenderer, Text.literal("- " + result.seed() + " (" + result.reason() + ")"), left, y + i * 10, 0xB5EAEA, false);
+            String prefix = i == selectedResultIndex ? "> " : "  ";
+            int color = i == selectedResultIndex ? 0x7CFF7C : 0xB5EAEA;
+            context.drawText(textRenderer, Text.literal(prefix + result.seed() + " (" + result.reason() + ")"), RESULTS_X, RESULTS_Y + i * RESULTS_ROW_HEIGHT, color, false);
         }
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        boolean handled = super.mouseClicked(mouseX, mouseY, button);
+
+        int clickedFilter = rowAt(mouseX, mouseY, FILTER_LIST_X, FILTER_LIST_Y, FILTER_ROW_HEIGHT, FILTER_ROWS_VISIBLE, filters.size());
+        if (clickedFilter >= 0) {
+            selectFilter(clickedFilter);
+            return true;
+        }
+
+        int clickedResult = rowAt(mouseX, mouseY, RESULTS_X, RESULTS_Y, RESULTS_ROW_HEIGHT, RESULTS_VISIBLE, results.size());
+        if (clickedResult >= 0) {
+            selectedResultIndex = clickedResult;
+            openSeedMapForSelection();
+            return true;
+        }
+
+        return handled;
+    }
+
+    private static int rowAt(double mouseX, double mouseY, int x, int y, int rowHeight, int visibleRows, int rowCount) {
+        if (mouseX < x || mouseX > x + 420) {
+            return -1;
+        }
+        if (mouseY < y || mouseY > y + (visibleRows * rowHeight)) {
+            return -1;
+        }
+        int row = (int) ((mouseY - y) / rowHeight);
+        if (row < 0 || row >= rowCount) {
+            return -1;
+        }
+        return row;
     }
 
     private static int parseInt(String s, int fallback) {
@@ -208,9 +511,191 @@ public final class CubiomesDashboardScreen extends Screen {
 
     private static StructureType parseStructure(String value) {
         try {
-            return StructureType.valueOf(value.trim().toUpperCase());
+            return StructureType.valueOf(value.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException ex) {
             return StructureType.VILLAGE;
+        }
+    }
+
+    private static final class BiomeAtFilter implements EditableFilter {
+        private boolean enabled = true;
+        private int biomeId = 1;
+        private int scale = 4;
+        private int x = 0;
+        private int y = 0;
+        private int z = 0;
+
+        @Override
+        public FilterType type() {
+            return FilterType.BIOME_AT;
+        }
+
+        @Override
+        public boolean enabled() {
+            return enabled;
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        @Override
+        public String summary() {
+            return "biomeId=" + biomeId + " scale=" + scale + " pos=(" + x + "," + z + ")";
+        }
+
+        @Override
+        public String toEditorString() {
+            return "biomeId=" + biomeId + ", scale=" + scale + ", x=" + x + ", y=" + y + ", z=" + z;
+        }
+
+        @Override
+        public void applyEditorString(String editorString) {
+            Map<String, String> values = parseEditorMap(editorString);
+            biomeId = requiredInt(values, "biomeid", biomeId);
+            scale = requiredInt(values, "scale", scale);
+            x = requiredInt(values, "x", x);
+            y = requiredInt(values, "y", y);
+            z = requiredInt(values, "z", z);
+        }
+    }
+
+    private static final class StructureFilterEntry implements EditableFilter {
+        private boolean enabled = true;
+        private StructureType structureType = StructureType.VILLAGE;
+        private int regionX = 0;
+        private int regionZ = 0;
+        private int minX = -512;
+        private int maxX = 512;
+        private int minZ = -512;
+        private int maxZ = 512;
+
+        @Override
+        public FilterType type() {
+            return FilterType.STRUCTURE;
+        }
+
+        @Override
+        public boolean enabled() {
+            return enabled;
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        @Override
+        public String summary() {
+            return structureType + " region=(" + regionX + "," + regionZ + ") rangeX=" + minX + ".." + maxX + " rangeZ=" + minZ + ".." + maxZ;
+        }
+
+        @Override
+        public String toEditorString() {
+            return "type=" + structureType + ", regionX=" + regionX + ", regionZ=" + regionZ + ", minX=" + minX + ", maxX=" + maxX + ", minZ=" + minZ + ", maxZ=" + maxZ;
+        }
+
+        @Override
+        public void applyEditorString(String editorString) {
+            Map<String, String> values = parseEditorMap(editorString);
+            structureType = parseStructure(requiredString(values, "type", structureType.name()));
+            regionX = requiredInt(values, "regionx", regionX);
+            regionZ = requiredInt(values, "regionz", regionZ);
+            minX = requiredInt(values, "minx", minX);
+            maxX = requiredInt(values, "maxx", maxX);
+            minZ = requiredInt(values, "minz", minZ);
+            maxZ = requiredInt(values, "maxz", maxZ);
+        }
+    }
+
+    private static final class SpawnTopBlockFilter implements EditableFilter {
+        private boolean enabled = true;
+        private String blockId = "minecraft:mossy_cobblestone";
+        private int spawnRadius = 128;
+        private int minTopY = Integer.MIN_VALUE;
+        private int maxTopY = Integer.MAX_VALUE;
+        private int javaVerificationBudget = 64;
+
+        @Override
+        public FilterType type() {
+            return FilterType.SPAWN_TOP_BLOCK;
+        }
+
+        @Override
+        public boolean enabled() {
+            return enabled;
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        @Override
+        public String summary() {
+            return "block=" + blockId + " spawnRadius=" + spawnRadius + " budget=" + javaVerificationBudget;
+        }
+
+        @Override
+        public String toEditorString() {
+            return "block=" + blockId + ", radius=" + spawnRadius + ", minY=" + minTopY + ", maxY=" + maxTopY + ", budget=" + javaVerificationBudget;
+        }
+
+        @Override
+        public void applyEditorString(String editorString) {
+            Map<String, String> values = parseEditorMap(editorString);
+            blockId = requiredString(values, "block", blockId);
+            spawnRadius = Math.max(0, requiredInt(values, "radius", spawnRadius));
+            minTopY = requiredInt(values, "miny", minTopY);
+            maxTopY = requiredInt(values, "maxy", maxTopY);
+            javaVerificationBudget = Math.max(1, requiredInt(values, "budget", javaVerificationBudget));
+        }
+    }
+
+    private static final class SeedMapConfirmScreen extends Screen {
+        private final Screen parent;
+        private final String url;
+
+        private SeedMapConfirmScreen(Screen parent, String url) {
+            super(Text.literal("Open Seed Map"));
+            this.parent = parent;
+            this.url = url;
+        }
+
+        @Override
+        protected void init() {
+            int centerX = width / 2;
+            int centerY = height / 2;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Open"), button -> {
+                SeedMapViewer.openInBrowser(url);
+                if (client != null) {
+                    client.setScreen(parent);
+                }
+            }).dimensions(centerX - 105, centerY + 16, 100, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), button -> {
+                if (client != null) {
+                    client.setScreen(parent);
+                }
+            }).dimensions(centerX + 5, centerY + 16, 100, 20).build());
+        }
+
+        @Override
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+            renderBackground(context, mouseX, mouseY, delta);
+            super.render(context, mouseX, mouseY, delta);
+            int centerX = width / 2;
+            int centerY = height / 2;
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Open external seed map viewer?"), centerX, centerY - 20, 0xFFFFFF);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(url), centerX, centerY - 6, 0xB5EAEA);
+        }
+
+        @Override
+        public void close() {
+            MinecraftClient minecraftClient = this.client;
+            if (minecraftClient != null) {
+                minecraftClient.setScreen(parent);
+            }
         }
     }
 }

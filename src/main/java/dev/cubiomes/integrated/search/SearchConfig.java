@@ -15,9 +15,13 @@ public record SearchConfig(
     int generatorFlags,
     List<StructureFilter> structureFilters,
     List<BiomeFilter> biomeFilters,
-    TerrainFilter terrainFilter
+    List<TerrainFilter> terrainFilters
 ) {
     public long candidateCount() {
         return Math.max(0L, endSeedExclusive - startSeedInclusive);
+    }
+
+    public boolean requiresMinecraftHandoff() {
+        return terrainFilters.stream().anyMatch(TerrainFilter::enabled);
     }
 }

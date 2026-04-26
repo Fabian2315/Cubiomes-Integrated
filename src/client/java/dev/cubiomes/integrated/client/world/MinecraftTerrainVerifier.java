@@ -1,5 +1,6 @@
 package dev.cubiomes.integrated.client.world;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import dev.cubiomes.integrated.CubiomesIntegratedMod;
@@ -10,8 +11,8 @@ public final class MinecraftTerrainVerifier implements TerrainVerifier {
     private final AtomicBoolean warningLogged = new AtomicBoolean(false);
 
     @Override
-    public boolean verifyAtSpawnTop(long seed, TerrainFilter filter) {
-        if (!filter.enabled()) {
+    public boolean verifyAtSpawnTop(long seed, List<TerrainFilter> filters) {
+        if (filters.isEmpty()) {
             return true;
         }
 
