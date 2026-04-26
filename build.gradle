@@ -15,6 +15,21 @@ repositories {
     maven { url = 'https://maven.fabricmc.net/' }
 }
 
+def nativeLibraryName = System.mapLibraryName('cubiomes_jna')
+def nativeBuildDir = layout.projectDirectory.dir('native/build')
+def nativeLibraryFile = file("native/build/${nativeLibraryName}")
+
+tasks.register('configureNativeLibrary', Exec) {
+    workingDir = file('native')
+    commandLine 'cmake', '-S', '.', '-B', 'build'
+}
+
+tasks.register('buildNativeLibrary', Exec) {
+    dependsOn 'configureNativeLibrary'
+    workingDir = file('native')
+    commandLine 'cmake', '--build', 'build'
+}
+
 loom {
     splitEnvironmentSourceSets()
 
@@ -37,7 +52,13 @@ dependencies {
 }
 
 processResources {
+    dependsOn 'buildNativeLibrary'
+
     inputs.property 'version', project.version
+
+    from(nativeLibraryFile) {
+        into 'native'
+    }
 
     filesMatching('fabric.mod.json') {
         expand version: project.version

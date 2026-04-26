@@ -1,5 +1,10 @@
 package dev.cubiomes.integrated.nativebridge;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.lang.ref.Cleaner;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +18,7 @@ import com.sun.jna.Structure;
 public final class NativeCubiomes {
     private static final String NATIVE_PATH_ENV = "CUBIOMES_NATIVE_LIB";
     private static final String NATIVE_PATH_PROPERTY = "cubiomes.native.lib";
+    private static final String BUNDLED_NATIVE_RESOURCE = "/native/" + System.mapLibraryName("cubiomes_jna");
     private static final Cleaner CLEANER = Cleaner.create();
     private static final CubiomesLibrary LIB = load();
 
@@ -41,9 +47,29 @@ public final class NativeCubiomes {
             return Native.load(configured, CubiomesLibrary.class);
         }
 
+        String bundled = extractBundledNativeLibrary();
+        if (bundled != null) {
+            return Native.load(bundled, CubiomesLibrary.class);
+        }
+
         return Native.load("cubiomes_jna", CubiomesLibrary.class, Map.of(
             Library.OPTION_STRING_ENCODING, "UTF-8"
         ));
+    }
+
+    private static String extractBundledNativeLibrary() {
+        try (InputStream inputStream = NativeCubiomes.class.getResourceAsStream(BUNDLED_NATIVE_RESOURCE)) {
+            if (inputStream == null) {
+                return null;
+            }
+
+            Path extractedLibrary = Files.createTempFile("cubiomes_jna-", System.mapLibraryName("cubiomes_jna"));
+            Files.copy(inputStream, extractedLibrary, StandardCopyOption.REPLACE_EXISTING);
+            extractedLibrary.toFile().deleteOnExit();
+            return extractedLibrary.toAbsolutePath().toString();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to extract bundled cubiomes native library", exception);
+        }
     }
 
     public static final class NativeGenerator implements AutoCloseable {
