@@ -1,22 +1,10 @@
 package dev.cubiomes.integrated.client.screen;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-
-import dev.cubiomes.integrated.CubiomesIntegratedMod;
-
 public final class DashboardSettings {
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final String SETTINGS_FILE = "cubiomes_dashboard_settings.json";
+    private static final DashboardSettings SESSION = new DashboardSettings();
 
     private String startSeed = "0";
     private String endSeed = "1000000";
@@ -24,6 +12,12 @@ public final class DashboardSettings {
     private String maxResults = "250";
     private boolean seedMapPopupEnabled = true;
     private final List<FilterSettings> filters = new ArrayList<>();
+
+    private DashboardSettings() {
+        filters.add(new FilterSettings("BIOME_AT", true, "biomeId=1, scale=4, x=0, y=0, z=0"));
+        filters.add(new FilterSettings("STRUCTURE", true, "structure=VILLAGE, regionX=0, regionZ=0, minX=-512, maxX=512, minZ=-512, maxZ=512"));
+        filters.add(new FilterSettings("SPAWN_TOP_BLOCK", false, "block=minecraft:grass_block, radius=0, minY=-64, maxY=320, budget=32"));
+    }
 
     public static class FilterSettings {
         public String type; // BIOME_AT, STRUCTURE, SPAWN_TOP_BLOCK
@@ -38,89 +32,11 @@ public final class DashboardSettings {
     }
 
     public static DashboardSettings load() {
-        Path configDir = getConfigDir();
-        Path settingsFile = configDir.resolve(SETTINGS_FILE);
-
-        if (!Files.exists(settingsFile)) {
-            return new DashboardSettings();
-        }
-
-        try {
-            String json = Files.readString(settingsFile);
-            JsonObject obj = GSON.fromJson(json, JsonObject.class);
-            if (obj == null) {
-                return new DashboardSettings();
-            }
-
-            DashboardSettings settings = new DashboardSettings();
-            if (obj.has("startSeed")) {
-                settings.startSeed = obj.get("startSeed").getAsString();
-            }
-            if (obj.has("endSeed")) {
-                settings.endSeed = obj.get("endSeed").getAsString();
-            }
-            if (obj.has("stride")) {
-                settings.stride = obj.get("stride").getAsString();
-            }
-            if (obj.has("maxResults")) {
-                settings.maxResults = obj.get("maxResults").getAsString();
-            }
-            if (obj.has("seedMapPopupEnabled")) {
-                settings.seedMapPopupEnabled = obj.get("seedMapPopupEnabled").getAsBoolean();
-            }
-            if (obj.has("filters")) {
-                JsonArray filtersArray = obj.getAsJsonArray("filters");
-                for (JsonElement element : filtersArray) {
-                    JsonObject filterObj = element.getAsJsonObject();
-                    FilterSettings filter = new FilterSettings(
-                        filterObj.get("type").getAsString(),
-                        filterObj.get("enabled").getAsBoolean(),
-                        filterObj.get("data").getAsString()
-                    );
-                    settings.filters.add(filter);
-                }
-            }
-
-            return settings;
-        } catch (IOException | RuntimeException ex) {
-            CubiomesIntegratedMod.LOGGER.error("Failed to load dashboard settings", ex);
-            return new DashboardSettings();
-        }
+        return SESSION;
     }
 
     public void save() {
-        Path configDir = getConfigDir();
-        Path settingsFile = configDir.resolve(SETTINGS_FILE);
-
-        try {
-            Files.createDirectories(configDir);
-
-            JsonObject obj = new JsonObject();
-            obj.addProperty("startSeed", startSeed);
-            obj.addProperty("endSeed", endSeed);
-            obj.addProperty("stride", stride);
-            obj.addProperty("maxResults", maxResults);
-            obj.addProperty("seedMapPopupEnabled", seedMapPopupEnabled);
-
-            JsonArray filtersArray = new JsonArray();
-            for (FilterSettings filter : filters) {
-                JsonObject filterObj = new JsonObject();
-                filterObj.addProperty("type", filter.type);
-                filterObj.addProperty("enabled", filter.enabled);
-                filterObj.addProperty("data", filter.data);
-                filtersArray.add(filterObj);
-            }
-            obj.add("filters", filtersArray);
-
-            String json = GSON.toJson(obj);
-            Files.writeString(settingsFile, json);
-        } catch (IOException ex) {
-            CubiomesIntegratedMod.LOGGER.error("Failed to save dashboard settings", ex);
-        }
-    }
-
-    private static Path getConfigDir() {
-        return Path.of(System.getProperty("user.home"), ".cubiomes_integrated");
+        // Session-backed settings are kept in memory only.
     }
 
     // Getters

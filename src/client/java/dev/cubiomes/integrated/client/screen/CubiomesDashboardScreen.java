@@ -82,8 +82,6 @@ public final class CubiomesDashboardScreen extends Screen {
         super(title);
         this.parent = parent;
         this.settings = DashboardSettings.load();
-        initializeDefaultFilters();
-        loadSettingsIntoUI();
     }
 
     @Override
@@ -111,12 +109,10 @@ public final class CubiomesDashboardScreen extends Screen {
         addDrawableChild(ButtonWidget.builder(Text.literal("Start Search"), b -> startSearch()).dimensions(width - 246, 24, 110, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> cancelSearch()).dimensions(width - 130, 24, 90, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Copy Seed"), b -> copySelectedSeedToClipboard()).dimensions(width - 246, 50, 100, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Open Seed Map"), b -> openSeedMapForSelection()).dimensions(width - 352, 50, 102, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Open Seed Map"), b -> openSeedMapForSelection()).dimensions(width - 140, 50, 100, 20).build());
         addDrawableChild(ButtonWidget.builder(seedMapPopupButtonLabel(), this::toggleSeedMapPopup).dimensions(width - 246, 76, 102, 20).build());
 
-        if (selectedFilterIndex < 0 && !filters.isEmpty()) {
-            selectFilter(0);
-        }
+        loadSettingsIntoUI();
     }
 
     private TextFieldWidget addField(int x, int y, int width, String value) {
@@ -563,6 +559,7 @@ public final class CubiomesDashboardScreen extends Screen {
         }
 
         // Select the first filter if available
+        selectedFilterIndex = -1;
         if (selectedFilterIndex < 0 && !filters.isEmpty()) {
             selectFilter(0);
         }
