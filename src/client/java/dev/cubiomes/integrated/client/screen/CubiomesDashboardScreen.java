@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import dev.cubiomes.integrated.client.world.MinecraftTerrainVerifier;
-import dev.cubiomes.integrated.client.world.WorldLauncher;
 import dev.cubiomes.integrated.nativebridge.NativeCubiomes;
 import dev.cubiomes.integrated.nativebridge.NativeCubiomes.StructureType;
 import dev.cubiomes.integrated.search.SearchConfig;
@@ -57,6 +56,8 @@ public final class CubiomesDashboardScreen extends Screen {
 
     private final SeedSearcher searcher = new SeedSearcher();
     private final MinecraftTerrainVerifier terrainVerifier = new MinecraftTerrainVerifier();
+    private final Screen parent;
+    private final DashboardSettings settings;
 
     private TextFieldWidget startSeedField;
     private TextFieldWidget endSeedField;
@@ -74,8 +75,15 @@ public final class CubiomesDashboardScreen extends Screen {
     private String statusText = "Ready";
 
     public CubiomesDashboardScreen(Text title) {
+        this(title, null);
+    }
+
+    public CubiomesDashboardScreen(Text title, Screen parent) {
         super(title);
+        this.parent = parent;
+        this.settings = DashboardSettings.load();
         initializeDefaultFilters();
+        loadSettingsIntoUI();
     }
 
     @Override
@@ -102,9 +110,9 @@ public final class CubiomesDashboardScreen extends Screen {
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Start Search"), b -> startSearch()).dimensions(width - 246, 24, 110, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> cancelSearch()).dimensions(width - 130, 24, 90, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Generate & Join"), b -> generateAndJoin()).dimensions(width - 246, 50, 206, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Open Seed Map"), b -> openSeedMapForSelection()).dimensions(width - 246, 76, 102, 20).build());
-        addDrawableChild(ButtonWidget.builder(seedMapPopupButtonLabel(), this::toggleSeedMapPopup).dimensions(width - 140, 76, 100, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Copy Seed"), b -> copySelectedSeedToClipboard()).dimensions(width - 246, 50, 100, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Open Seed Map"), b -> openSeedMapForSelection()).dimensions(width - 352, 50, 102, 20).build());
+        addDrawableChild(ButtonWidget.builder(seedMapPopupButtonLabel(), this::toggleSeedMapPopup).dimensions(width - 246, 76, 102, 20).build());
 
         if (selectedFilterIndex < 0 && !filters.isEmpty()) {
             selectFilter(0);
@@ -215,15 +223,18 @@ public final class CubiomesDashboardScreen extends Screen {
         statusText = "Search cancelled";
     }
 
-    private void generateAndJoin() {
+    private void copySelectedSeedToClipboard() {
         if (client == null || results.isEmpty()) {
+            statusText = "No seeds found yet";
             return;
         }
         SearchResult result = getSelectedResult();
         if (result == null) {
+            statusText = "No seed selected";
             return;
         }
-        WorldLauncher.launchOrOpenCreateWorld(client, result.seed(), this);
+        client.keyboard.setClipboard(Long.toString(result.seed()));
+        statusText = "Seed " + result.seed() + " copied to clipboard";
     }
 
     private void openSeedMapForSelection() {
@@ -397,6 +408,13 @@ public final class CubiomesDashboardScreen extends Screen {
     public void close() {
         cancelSearch();
         searcher.close();
+        saveSettingsFromUI();
+        settings.save();
+        if (client != null && parent != null) {
+            client.setScreen(parent);
+            return;
+        }
+
         super.close();
     }
 
@@ -516,6 +534,98 @@ public final class CubiomesDashboardScreen extends Screen {
         } catch (IllegalArgumentException ex) {
             return StructureType.VILLAGE;
         }
+    }
+
+    private void loadSettingsIntoUI() {
+        // Load basic search parameters
+        if (startSeedField != null) {
+            startSeedField.setText(settings.getStartSeed());
+        }
+        if (endSeedField != null) {
+            endSeedField.setText(settings.getEndSeed());
+        }
+        if (strideField != null) {
+            strideField.setText(settings.getStride());
+        }
+        if (maxResultsField != null) {
+            maxResultsField.setText(settings.getMaxResults());
+        }
+
+        seedMapPopupEnabled = settings.isSeedMapPopupEnabled();
+
+        // Load filters
+        filters.clear();
+        for (DashboardSettings.FilterSettings filterSettings : settings.getFilters()) {
+            EditableFilter filter = createFilterFromSettings(filterSettings);
+            if (filter != null) {
+                filters.add(filter);
+            }
+        }
+
+        // Select the first filter if available
+        if (selectedFilterIndex < 0 && !filters.isEmpty()) {
+            selectFilter(0);
+        }
+    }
+
+    private void saveSettingsFromUI() {
+        // Save basic search parameters
+        if (startSeedField != null) {
+            settings.setStartSeed(startSeedField.getText());
+        }
+        if (endSeedField != null) {
+            settings.setEndSeed(endSeedField.getText());
+        }
+        if (strideField != null) {
+            settings.setStride(strideField.getText());
+        }
+        if (maxResultsField != null) {
+            settings.setMaxResults(maxResultsField.getText());
+        }
+
+        settings.setSeedMapPopupEnabled(seedMapPopupEnabled);
+
+        // Save filters
+        settings.getFilters().clear();
+        for (EditableFilter filter : filters) {
+            DashboardSettings.FilterSettings filterSettings = createSettingsFromFilter(filter);
+            if (filterSettings != null) {
+                settings.getFilters().add(filterSettings);
+            }
+        }
+    }
+
+    private EditableFilter createFilterFromSettings(DashboardSettings.FilterSettings settings) {
+        return switch (settings.type) {
+            case "BIOME_AT" -> {
+                BiomeAtFilter filter = new BiomeAtFilter();
+                filter.applyEditorString(settings.data);
+                filter.setEnabled(settings.enabled);
+                yield filter;
+            }
+            case "STRUCTURE" -> {
+                StructureFilterEntry filter = new StructureFilterEntry();
+                filter.applyEditorString(settings.data);
+                filter.setEnabled(settings.enabled);
+                yield filter;
+            }
+            case "SPAWN_TOP_BLOCK" -> {
+                SpawnTopBlockFilter filter = new SpawnTopBlockFilter();
+                filter.applyEditorString(settings.data);
+                filter.setEnabled(settings.enabled);
+                yield filter;
+            }
+            default -> null;
+        };
+    }
+
+    private DashboardSettings.FilterSettings createSettingsFromFilter(EditableFilter filter) {
+        String type = switch (filter.type()) {
+            case BIOME_AT -> "BIOME_AT";
+            case STRUCTURE -> "STRUCTURE";
+            case SPAWN_TOP_BLOCK -> "SPAWN_TOP_BLOCK";
+        };
+        return new DashboardSettings.FilterSettings(type, filter.enabled(), filter.toEditorString());
     }
 
     private static final class BiomeAtFilter implements EditableFilter {
