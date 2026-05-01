@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "../cubiomes-context/cubiomes/finders.h"
+#include "../cubiomes-context/cubiomes/util.h"
 
 #if defined(_WIN32)
 #define CI_EXPORT __declspec(dllexport)
@@ -58,4 +59,12 @@ CI_EXPORT int ci_get_structure_pos(int structureType, int mcVersion, uint64_t se
     }
 
     return getStructurePos(structureType, mcVersion, seed, regX, regZ, outPos);
+}
+
+CI_EXPORT const char *ci_biome2str(int mcVersion, int biomeId) {
+    return biome2str(mcVersion, biomeId);
+}
+
+CI_EXPORT const char *ci_struct2str(int structureType) {
+    return struct2str(structureType);
 }

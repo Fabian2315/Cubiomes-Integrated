@@ -29,6 +29,14 @@ public final class NativeCubiomes {
         return LIB.ci_mc_1_21_1();
     }
 
+    public static String biomeName(int mcVersion, int biomeId) {
+        return LIB.ci_biome2str(mcVersion, biomeId);
+    }
+
+    public static String structureName(int structureType) {
+        return LIB.ci_struct2str(structureType);
+    }
+
     public static NativeGenerator createGenerator(int mcVersion, int flags) {
         Pointer handle = LIB.ci_generator_create(mcVersion, flags);
         if (handle == null || Pointer.nativeValue(handle) == 0L) {
@@ -171,6 +179,10 @@ public final class NativeCubiomes {
 
     private interface CubiomesLibrary extends Library {
         int ci_mc_1_21_1();
+
+        String ci_biome2str(int mcVersion, int biomeId);
+
+        String ci_struct2str(int structureType);
 
         Pointer ci_generator_create(int mcVersion, int flags);
 

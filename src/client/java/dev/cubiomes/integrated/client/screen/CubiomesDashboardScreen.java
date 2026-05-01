@@ -2,6 +2,7 @@ package dev.cubiomes.integrated.client.screen;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -49,6 +50,8 @@ public final class CubiomesDashboardScreen extends Screen {
         String toEditorString();
 
         void applyEditorString(String editorString);
+
+        EditableFilter copy();
     }
 
     private final SeedSearcher searcher = new SeedSearcher();
@@ -59,7 +62,6 @@ public final class CubiomesDashboardScreen extends Screen {
     private TextFieldWidget endSeedField;
     private TextFieldWidget strideField;
     private TextFieldWidget maxResultsField;
-    private TextFieldWidget selectedFilterEditorField;
 
     private CompletableFuture<List<SearchResult>> inFlight;
     private final List<EditableFilter> filters = new ArrayList<>();
@@ -89,17 +91,15 @@ public final class CubiomesDashboardScreen extends Screen {
         endSeedField = addField(left + 240, top, 110, "1000000");
         strideField = addField(left + 64, top + 24, 50, "1");
         maxResultsField = addField(left + 240, top + 24, 70, "250");
-        selectedFilterEditorField = addField(left + 100, top + 56, 420, "");
-        selectedFilterEditorField.setMaxLength(2048);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Add Biome"), b -> addFilter(new BiomeAtFilter())).dimensions(left, top + 84, 92, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Add Structure"), b -> addFilter(new StructureFilterEntry())).dimensions(left + 96, top + 84, 106, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Add Biome"), b -> openFilterEditor(new BiomeAtFilter(), true)).dimensions(left, top + 84, 92, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Add Structure"), b -> openFilterEditor(new StructureFilterEntry(), true)).dimensions(left + 96, top + 84, 106, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Toggle"), b -> toggleSelectedFilter()).dimensions(left + 206, top + 84, 70, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Remove"), b -> removeSelectedFilter()).dimensions(left + 280, top + 84, 70, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Up"), b -> moveSelectedFilter(-1)).dimensions(left + 354, top + 84, 42, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Down"), b -> moveSelectedFilter(1)).dimensions(left + 400, top + 84, 56, 20).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Apply Selected"), b -> applySelectedFilterEdits()).dimensions(left + 526, top + 56, 112, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Edit Selected"), b -> applySelectedFilterEdits()).dimensions(left + 526, top + 56, 112, 20).build());
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Start Search"), b -> startSearch()).dimensions(width - 246, 24, 110, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> cancelSearch()).dimensions(width - 130, 24, 90, 20).build());
@@ -262,7 +262,6 @@ public final class CubiomesDashboardScreen extends Screen {
         filters.remove(selectedFilterIndex);
         if (filters.isEmpty()) {
             selectedFilterIndex = -1;
-            selectedFilterEditorField.setText("");
         } else {
             selectFilter(Math.min(selectedFilterIndex, filters.size() - 1));
         }
@@ -292,13 +291,7 @@ public final class CubiomesDashboardScreen extends Screen {
             return;
         }
 
-        try {
-            filter.applyEditorString(selectedFilterEditorField.getText());
-            selectedFilterEditorField.setText(filter.toEditorString());
-            statusText = "Updated filter: " + typeLabel(filter.type());
-        } catch (IllegalArgumentException exception) {
-            statusText = "Invalid filter format: " + exception.getMessage();
-        }
+        openFilterEditor(filter.copy(), false);
     }
 
     private EditableFilter getSelectedFilter() {
@@ -313,7 +306,14 @@ public final class CubiomesDashboardScreen extends Screen {
             return;
         }
         selectedFilterIndex = index;
-        selectedFilterEditorField.setText(filters.get(index).toEditorString());
+    }
+
+    private void openFilterEditor(EditableFilter filter, boolean creatingNewFilter) {
+        if (client == null) {
+            return;
+        }
+
+        client.setScreen(new FilterEditorScreen(this, filter, creatingNewFilter));
     }
 
     private static Map<String, String> parseEditorMap(String editorString) {
@@ -359,6 +359,38 @@ public final class CubiomesDashboardScreen extends Screen {
         };
     }
 
+    private static String biomeLabel(int biomeId) {
+        String label = NativeCubiomes.biomeName(NativeCubiomes.mcVersion1211(), biomeId);
+        if (label == null || label.isBlank()) {
+            return "biome " + biomeId;
+        }
+        return label + " (id=" + biomeId + ")";
+    }
+
+    private static String structureLabel(StructureType structureType) {
+        String label = NativeCubiomes.structureName(structureType.ordinal());
+        if (label == null || label.isBlank()) {
+            return structureType.name();
+        }
+        return label;
+    }
+
+    private static List<BiomeOption> buildBiomeOptions() {
+        List<BiomeOption> options = new ArrayList<>();
+        for (int biomeId = 0; biomeId < 256; biomeId++) {
+            String label = NativeCubiomes.biomeName(NativeCubiomes.mcVersion1211(), biomeId);
+            if (label == null || label.isBlank()) {
+                continue;
+            }
+            if ("unknown".equalsIgnoreCase(label) || "minecraft:unknown".equalsIgnoreCase(label)) {
+                continue;
+            }
+            options.add(new BiomeOption(biomeId, label));
+        }
+        options.sort(Comparator.comparing(BiomeOption::label));
+        return options;
+    }
+
     private Text seedMapPopupButtonLabel() {
         return Text.literal(seedMapPopupEnabled ? "Popup: ON" : "Popup: OFF");
     }
@@ -395,7 +427,7 @@ public final class CubiomesDashboardScreen extends Screen {
         context.drawText(textRenderer, Text.literal("End"), left + 186, 32, 0xD0D0D0, false);
         context.drawText(textRenderer, Text.literal("Stride"), left, 56, 0xD0D0D0, false);
         context.drawText(textRenderer, Text.literal("Max Results"), left + 186, 56, 0xD0D0D0, false);
-        context.drawText(textRenderer, Text.literal("Edit Selected Filter (key=value, comma-separated)"), left, 80, 0xD0D0D0, false);
+        context.drawText(textRenderer, Text.literal("Edit Selected Filter"), left, 80, 0xD0D0D0, false);
 
         int enabledCubiomes = 0;
         for (EditableFilter filter : filters) {
@@ -606,7 +638,7 @@ public final class CubiomesDashboardScreen extends Screen {
 
         @Override
         public String summary() {
-            return "biomeId=" + biomeId + " scale=" + scale + " pos=(" + x + "," + z + ")";
+            return biomeLabel(biomeId) + " scale=" + scale + " pos=(" + x + "," + z + ")";
         }
 
         @Override
@@ -622,6 +654,18 @@ public final class CubiomesDashboardScreen extends Screen {
             x = requiredInt(values, "x", x);
             y = requiredInt(values, "y", y);
             z = requiredInt(values, "z", z);
+        }
+
+        @Override
+        public EditableFilter copy() {
+            BiomeAtFilter copy = new BiomeAtFilter();
+            copy.enabled = enabled;
+            copy.biomeId = biomeId;
+            copy.scale = scale;
+            copy.x = x;
+            copy.y = y;
+            copy.z = z;
+            return copy;
         }
     }
 
@@ -652,7 +696,7 @@ public final class CubiomesDashboardScreen extends Screen {
 
         @Override
         public String summary() {
-            return structureType + " region=(" + regionX + "," + regionZ + ") rangeX=" + minX + ".." + maxX + " rangeZ=" + minZ + ".." + maxZ;
+            return structureLabel(structureType) + " region=(" + regionX + "," + regionZ + ") rangeX=" + minX + ".." + maxX + " rangeZ=" + minZ + ".." + maxZ;
         }
 
         @Override
@@ -670,6 +714,287 @@ public final class CubiomesDashboardScreen extends Screen {
             maxX = requiredInt(values, "maxx", maxX);
             minZ = requiredInt(values, "minz", minZ);
             maxZ = requiredInt(values, "maxz", maxZ);
+        }
+
+        @Override
+        public EditableFilter copy() {
+            StructureFilterEntry copy = new StructureFilterEntry();
+            copy.enabled = enabled;
+            copy.structureType = structureType;
+            copy.regionX = regionX;
+            copy.regionZ = regionZ;
+            copy.minX = minX;
+            copy.maxX = maxX;
+            copy.minZ = minZ;
+            copy.maxZ = maxZ;
+            return copy;
+        }
+    }
+
+    private record BiomeOption(int biomeId, String label) {
+    }
+
+    private final class FilterEditorScreen extends Screen {
+        private static final int LIST_X = 16;
+        private static final int LIST_Y = 44;
+        private static final int LIST_WIDTH = 250;
+        private static final int LIST_HEIGHT = 168;
+        private static final int LIST_ROW_HEIGHT = 12;
+        private static final int LIST_ROWS = 14;
+
+        private final Screen parentScreen;
+        private final boolean creatingNewFilter;
+        private final List<BiomeOption> biomeOptions = buildBiomeOptions();
+        private final List<StructureType> structureOptions = List.of(StructureType.values());
+        private EditableFilter workingFilter;
+        private TextFieldWidget scaleField;
+        private TextFieldWidget xField;
+        private TextFieldWidget yField;
+        private TextFieldWidget zField;
+        private TextFieldWidget regionXField;
+        private TextFieldWidget regionZField;
+        private TextFieldWidget minXField;
+        private TextFieldWidget maxXField;
+        private TextFieldWidget minZField;
+        private TextFieldWidget maxZField;
+        private String errorText = "";
+        private int biomeScrollIndex;
+        private int structureScrollIndex;
+        private int selectedBiomeIndex;
+        private int selectedStructureIndex;
+
+        private FilterEditorScreen(Screen parentScreen, EditableFilter workingFilter, boolean creatingNewFilter) {
+            super(Text.literal("Edit Filter"));
+            this.parentScreen = parentScreen;
+            this.workingFilter = workingFilter;
+            this.creatingNewFilter = creatingNewFilter;
+        }
+
+        @Override
+        protected void init() {
+            int rightX = 292;
+            int topY = 44;
+
+            addDrawableChild(ButtonWidget.builder(Text.literal("Save"), button -> saveChanges()).dimensions(width - 214, 16, 100, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), button -> closeEditor()).dimensions(width - 108, 16, 92, 20).build());
+
+            if (workingFilter instanceof BiomeAtFilter biome) {
+                selectedBiomeIndex = findBiomeIndex(biome.biomeId);
+                biomeScrollIndex = clampScroll(selectedBiomeIndex, biomeOptions.size());
+                scaleField = addField(rightX + 52, topY + 28, 70, Integer.toString(biome.scale));
+                xField = addField(rightX + 52, topY + 52, 70, Integer.toString(biome.x));
+                yField = addField(rightX + 52, topY + 76, 70, Integer.toString(biome.y));
+                zField = addField(rightX + 52, topY + 100, 70, Integer.toString(biome.z));
+            } else if (workingFilter instanceof StructureFilterEntry structure) {
+                selectedStructureIndex = findStructureIndex(structure.structureType);
+                structureScrollIndex = clampScroll(selectedStructureIndex, structureOptions.size());
+                regionXField = addField(rightX + 52, topY + 28, 70, Integer.toString(structure.regionX));
+                regionZField = addField(rightX + 52, topY + 52, 70, Integer.toString(structure.regionZ));
+                minXField = addField(rightX + 52, topY + 76, 70, Integer.toString(structure.minX));
+                maxXField = addField(rightX + 132, topY + 76, 70, Integer.toString(structure.maxX));
+                minZField = addField(rightX + 52, topY + 100, 70, Integer.toString(structure.minZ));
+                maxZField = addField(rightX + 132, topY + 100, 70, Integer.toString(structure.maxZ));
+            }
+        }
+
+        @Override
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+            renderBackground(context, mouseX, mouseY, delta);
+            super.render(context, mouseX, mouseY, delta);
+
+            int centerX = width / 2;
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Filter Editor"), centerX, 12, 0xFFFFFF);
+            context.drawText(textRenderer, Text.literal(errorText.isBlank() ? "Click an item in the list to select it." : errorText), 16, 28, errorText.isBlank() ? 0xD0D0D0 : 0xFF8080, false);
+
+            context.fill(LIST_X - 2, LIST_Y - 2, LIST_X + LIST_WIDTH + 2, LIST_Y + LIST_HEIGHT + 2, 0x66000000);
+            context.drawText(textRenderer, Text.literal(workingFilter.type() == FilterType.BIOME_AT ? "Biomes" : "Structures"), LIST_X, LIST_Y - 12, 0xFFFFFF, false);
+
+            if (workingFilter instanceof BiomeAtFilter biome) {
+                renderBiomeList(context, mouseX, mouseY, biome);
+                drawBiomeLabels(context, biome);
+            } else if (workingFilter instanceof StructureFilterEntry structure) {
+                renderStructureList(context, mouseX, mouseY, structure);
+                drawStructureLabels(context, structure);
+            }
+        }
+
+        private void renderBiomeList(DrawContext context, int mouseX, int mouseY, BiomeAtFilter biome) {
+            int rows = Math.min(LIST_ROWS, Math.max(0, biomeOptions.size() - biomeScrollIndex));
+            for (int row = 0; row < rows; row++) {
+                int optionIndex = biomeScrollIndex + row;
+                BiomeOption option = biomeOptions.get(optionIndex);
+                int rowY = LIST_Y + row * LIST_ROW_HEIGHT;
+                boolean selected = option.biomeId() == biome.biomeId;
+                boolean hovered = mouseX >= LIST_X && mouseX <= LIST_X + LIST_WIDTH && mouseY >= rowY && mouseY < rowY + LIST_ROW_HEIGHT;
+                if (selected || hovered) {
+                    context.fill(LIST_X, rowY, LIST_X + LIST_WIDTH, rowY + LIST_ROW_HEIGHT, selected ? 0xAA335577 : 0x55335577);
+                }
+                context.drawText(textRenderer, Text.literal(option.label()), LIST_X + 4, rowY + 2, selected ? 0xFFFFFF : 0xD0D0D0, false);
+            }
+        }
+
+        private void renderStructureList(DrawContext context, int mouseX, int mouseY, StructureFilterEntry structure) {
+            int rows = Math.min(LIST_ROWS, Math.max(0, structureOptions.size() - structureScrollIndex));
+            for (int row = 0; row < rows; row++) {
+                int optionIndex = structureScrollIndex + row;
+                StructureType option = structureOptions.get(optionIndex);
+                int rowY = LIST_Y + row * LIST_ROW_HEIGHT;
+                boolean selected = option == structure.structureType;
+                boolean hovered = mouseX >= LIST_X && mouseX <= LIST_X + LIST_WIDTH && mouseY >= rowY && mouseY < rowY + LIST_ROW_HEIGHT;
+                if (selected || hovered) {
+                    context.fill(LIST_X, rowY, LIST_X + LIST_WIDTH, rowY + LIST_ROW_HEIGHT, selected ? 0xAA335577 : 0x55335577);
+                }
+                context.drawText(textRenderer, Text.literal(structureLabel(option)), LIST_X + 4, rowY + 2, selected ? 0xFFFFFF : 0xD0D0D0, false);
+            }
+        }
+
+        private void drawBiomeLabels(DrawContext context, BiomeAtFilter biome) {
+            int rightX = 292;
+            int topY = 44;
+            context.drawText(textRenderer, Text.literal("Selected: " + biomeLabel(biome.biomeId)), rightX, topY + 2, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Scale"), rightX, topY + 30, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("X"), rightX, topY + 54, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Y"), rightX, topY + 78, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Z"), rightX, topY + 102, 0xD0D0D0, false);
+        }
+
+        private void drawStructureLabels(DrawContext context, StructureFilterEntry structure) {
+            int rightX = 292;
+            int topY = 44;
+            context.drawText(textRenderer, Text.literal("Selected: " + structureLabel(structure.structureType)), rightX, topY + 2, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Region X"), rightX, topY + 30, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Region Z"), rightX, topY + 54, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Min X"), rightX, topY + 78, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Max X"), rightX + 80, topY + 78, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Min Z"), rightX, topY + 102, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Max Z"), rightX + 80, topY + 102, 0xD0D0D0, false);
+        }
+
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            if (workingFilter instanceof BiomeAtFilter) {
+                int clicked = rowAt(mouseX, mouseY, LIST_X, LIST_Y, LIST_ROW_HEIGHT, LIST_ROWS, biomeOptions.size());
+                if (clicked >= 0) {
+                    selectedBiomeIndex = biomeScrollIndex + clicked;
+                    selectedBiomeIndex = Math.max(0, Math.min(selectedBiomeIndex, biomeOptions.size() - 1));
+                    if (selectedBiomeIndex >= 0 && selectedBiomeIndex < biomeOptions.size()) {
+                        ((BiomeAtFilter) workingFilter).biomeId = biomeOptions.get(selectedBiomeIndex).biomeId();
+                    }
+                    return true;
+                }
+            } else if (workingFilter instanceof StructureFilterEntry) {
+                int clicked = rowAt(mouseX, mouseY, LIST_X, LIST_Y, LIST_ROW_HEIGHT, LIST_ROWS, structureOptions.size());
+                if (clicked >= 0) {
+                    selectedStructureIndex = structureScrollIndex + clicked;
+                    selectedStructureIndex = Math.max(0, Math.min(selectedStructureIndex, structureOptions.size() - 1));
+                    if (selectedStructureIndex >= 0 && selectedStructureIndex < structureOptions.size()) {
+                        ((StructureFilterEntry) workingFilter).structureType = structureOptions.get(selectedStructureIndex);
+                    }
+                    return true;
+                }
+            }
+
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+
+        @Override
+        public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+            if (workingFilter instanceof BiomeAtFilter) {
+                biomeScrollIndex = clampScroll(biomeScrollIndex - (int) Math.signum(verticalAmount), biomeOptions.size());
+                return true;
+            }
+            if (workingFilter instanceof StructureFilterEntry) {
+                structureScrollIndex = clampScroll(structureScrollIndex - (int) Math.signum(verticalAmount), structureOptions.size());
+                return true;
+            }
+            return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        }
+
+        private void saveChanges() {
+            try {
+                if (workingFilter instanceof BiomeAtFilter biome) {
+                    biome.scale = parseField(scaleField, "scale");
+                    biome.x = parseField(xField, "x");
+                    biome.y = parseField(yField, "y");
+                    biome.z = parseField(zField, "z");
+                    if (selectedBiomeIndex >= 0 && selectedBiomeIndex < biomeOptions.size()) {
+                        biome.biomeId = biomeOptions.get(selectedBiomeIndex).biomeId();
+                    }
+                } else if (workingFilter instanceof StructureFilterEntry structure) {
+                    structure.regionX = parseField(regionXField, "region X");
+                    structure.regionZ = parseField(regionZField, "region Z");
+                    structure.minX = parseField(minXField, "min X");
+                    structure.maxX = parseField(maxXField, "max X");
+                    structure.minZ = parseField(minZField, "min Z");
+                    structure.maxZ = parseField(maxZField, "max Z");
+                    if (structure.minX > structure.maxX) {
+                        throw new IllegalArgumentException("min X must be <= max X");
+                    }
+                    if (structure.minZ > structure.maxZ) {
+                        throw new IllegalArgumentException("min Z must be <= max Z");
+                    }
+                    if (selectedStructureIndex >= 0 && selectedStructureIndex < structureOptions.size()) {
+                        structure.structureType = structureOptions.get(selectedStructureIndex);
+                    }
+                }
+
+                if (creatingNewFilter) {
+                    filters.add(workingFilter.copy());
+                    selectedFilterIndex = filters.size() - 1;
+                } else if (selectedFilterIndex >= 0 && selectedFilterIndex < filters.size()) {
+                    filters.set(selectedFilterIndex, workingFilter.copy());
+                }
+
+                statusText = "Updated filter: " + typeLabel(workingFilter.type());
+                closeEditor();
+            } catch (IllegalArgumentException exception) {
+                errorText = exception.getMessage();
+            }
+        }
+
+        private int parseField(TextFieldWidget field, String name) {
+            if (field == null) {
+                throw new IllegalArgumentException("Missing field: " + name);
+            }
+            try {
+                return Integer.parseInt(field.getText().trim());
+            } catch (NumberFormatException exception) {
+                throw new IllegalArgumentException("Invalid " + name + ": " + field.getText());
+            }
+        }
+
+        private void closeEditor() {
+            if (client != null) {
+                client.setScreen(parentScreen);
+            }
+        }
+
+        @Override
+        public void close() {
+            closeEditor();
+        }
+
+        private int findBiomeIndex(int biomeId) {
+            for (int index = 0; index < biomeOptions.size(); index++) {
+                if (biomeOptions.get(index).biomeId() == biomeId) {
+                    return index;
+                }
+            }
+            return biomeOptions.isEmpty() ? -1 : 0;
+        }
+
+        private int findStructureIndex(StructureType structureType) {
+            for (int index = 0; index < structureOptions.size(); index++) {
+                if (structureOptions.get(index) == structureType) {
+                    return index;
+                }
+            }
+            return structureOptions.isEmpty() ? -1 : 0;
+        }
+
+        private int clampScroll(int scrollIndex, int optionCount) {
+            int maxScroll = Math.max(0, optionCount - LIST_ROWS);
+            return Math.max(0, Math.min(maxScroll, scrollIndex));
         }
     }
 
