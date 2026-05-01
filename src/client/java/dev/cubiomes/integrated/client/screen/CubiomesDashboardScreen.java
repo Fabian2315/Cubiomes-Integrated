@@ -69,6 +69,7 @@ public final class CubiomesDashboardScreen extends Screen {
     private SearchProgress progress = new SearchProgress(0, 0, 0);
     private int selectedFilterIndex = -1;
     private int selectedResultIndex = -1;
+    private int resultsScrollIndex = 0;
     private boolean seedMapPopupEnabled = true;
     private String statusText = "Ready";
 
@@ -121,6 +122,7 @@ public final class CubiomesDashboardScreen extends Screen {
         cancelSearch();
         results.clear();
         selectedResultIndex = -1;
+        resultsScrollIndex = 0;
         progress = new SearchProgress(0, 0, 0);
 
         SearchConfig config = buildConfig();
@@ -133,6 +135,7 @@ public final class CubiomesDashboardScreen extends Screen {
                 results.add(result);
                 if (selectedResultIndex < 0) {
                     selectedResultIndex = 0;
+                    resultsScrollIndex = 0;
                 }
             }
         );
@@ -458,12 +461,25 @@ public final class CubiomesDashboardScreen extends Screen {
             context.drawText(textRenderer, Text.literal(text), FILTER_LIST_X, FILTER_LIST_Y + i * FILTER_ROW_HEIGHT, color, false);
         }
 
-        context.drawText(textRenderer, Text.literal("Results (click seed to open seed map)"), RESULTS_X, RESULTS_Y - 12, 0xFFFFFF, false);
-        int visible = Math.min(RESULTS_VISIBLE, results.size());
-        for (int i = 0; i < visible; i++) {
-            SearchResult result = results.get(i);
-            String prefix = i == selectedResultIndex ? "> " : "  ";
-            int color = i == selectedResultIndex ? 0x7CFF7C : 0xB5EAEA;
+        context.drawText(textRenderer, Text.literal("Results (click to select; use Open Seed Map)"), RESULTS_X, RESULTS_Y - 12, 0xFFFFFF, false);
+        resultsScrollIndex = clampScroll(resultsScrollIndex, results.size(), RESULTS_VISIBLE);
+        if (selectedResultIndex < 0 && !results.isEmpty()) {
+            selectedResultIndex = 0;
+        }
+        if (selectedResultIndex >= 0) {
+            if (selectedResultIndex < resultsScrollIndex) {
+                resultsScrollIndex = selectedResultIndex;
+            } else if (selectedResultIndex >= resultsScrollIndex + RESULTS_VISIBLE) {
+                resultsScrollIndex = selectedResultIndex - RESULTS_VISIBLE + 1;
+            }
+        }
+
+        int visibleResults = Math.min(RESULTS_VISIBLE, Math.max(0, results.size() - resultsScrollIndex));
+        for (int i = 0; i < visibleResults; i++) {
+            int resultIndex = resultsScrollIndex + i;
+            SearchResult result = results.get(resultIndex);
+            String prefix = resultIndex == selectedResultIndex ? "> " : "  ";
+            int color = resultIndex == selectedResultIndex ? 0x7CFF7C : 0xB5EAEA;
             context.drawText(textRenderer, Text.literal(prefix + result.seed() + " (" + result.reason() + ")"), RESULTS_X, RESULTS_Y + i * RESULTS_ROW_HEIGHT, color, false);
         }
     }
@@ -480,12 +496,20 @@ public final class CubiomesDashboardScreen extends Screen {
 
         int clickedResult = rowAt(mouseX, mouseY, RESULTS_X, RESULTS_Y, 420, RESULTS_ROW_HEIGHT, RESULTS_VISIBLE, results.size());
         if (clickedResult >= 0) {
-            selectedResultIndex = clickedResult;
-            openSeedMapForSelection();
+            selectedResultIndex = resultsScrollIndex + clickedResult;
             return true;
         }
 
         return handled;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (mouseX >= RESULTS_X && mouseX <= RESULTS_X + 420 && mouseY >= RESULTS_Y && mouseY <= RESULTS_Y + (RESULTS_VISIBLE * RESULTS_ROW_HEIGHT)) {
+            resultsScrollIndex = clampScroll(resultsScrollIndex - (int) Math.signum(verticalAmount), results.size(), RESULTS_VISIBLE);
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     private static int rowAt(double mouseX, double mouseY, int x, int y, int width, int rowHeight, int visibleRows, int rowCount) {
@@ -500,6 +524,11 @@ public final class CubiomesDashboardScreen extends Screen {
             return -1;
         }
         return row;
+    }
+
+    private static int clampScroll(int scrollIndex, int optionCount, int visibleRows) {
+        int maxScroll = Math.max(0, optionCount - visibleRows);
+        return Math.max(0, Math.min(maxScroll, scrollIndex));
     }
 
     private static int parseInt(String s, int fallback) {
@@ -797,9 +826,9 @@ public final class CubiomesDashboardScreen extends Screen {
                 regionXField = addField(rightX + 52, topY + 28, 70, Integer.toString(structure.regionX));
                 regionZField = addField(rightX + 52, topY + 52, 70, Integer.toString(structure.regionZ));
                 minXField = addField(rightX + 52, topY + 76, 70, Integer.toString(structure.minX));
-                maxXField = addField(rightX + 132, topY + 76, 70, Integer.toString(structure.maxX));
+                maxXField = addField(rightX + 152, topY + 76, 70, Integer.toString(structure.maxX));
                 minZField = addField(rightX + 52, topY + 100, 70, Integer.toString(structure.minZ));
-                maxZField = addField(rightX + 132, topY + 100, 70, Integer.toString(structure.maxZ));
+                maxZField = addField(rightX + 152, topY + 100, 70, Integer.toString(structure.maxZ));
             }
         }
 
@@ -815,12 +844,17 @@ public final class CubiomesDashboardScreen extends Screen {
             context.fill(LIST_X - 2, LIST_Y - 2, LIST_X + LIST_WIDTH + 2, LIST_Y + LIST_HEIGHT + 2, 0x66000000);
             context.drawText(textRenderer, Text.literal(workingFilter.type() == FilterType.BIOME_AT ? "Biomes" : "Structures"), LIST_X, LIST_Y - 12, 0xFFFFFF, false);
 
+            String hoverHelp = null;
             if (workingFilter instanceof BiomeAtFilter biome) {
                 renderBiomeList(context, mouseX, mouseY, biome);
-                drawBiomeLabels(context, biome);
+                hoverHelp = drawBiomeLabels(context, mouseX, mouseY, biome);
             } else if (workingFilter instanceof StructureFilterEntry structure) {
                 renderStructureList(context, mouseX, mouseY, structure);
-                drawStructureLabels(context, structure);
+                hoverHelp = drawStructureLabels(context, mouseX, mouseY, structure);
+            }
+
+            if (hoverHelp != null) {
+                drawHoverHelp(context, mouseX, mouseY, hoverHelp);
             }
         }
 
@@ -854,26 +888,84 @@ public final class CubiomesDashboardScreen extends Screen {
             }
         }
 
-        private void drawBiomeLabels(DrawContext context, BiomeAtFilter biome) {
+        private String drawBiomeLabels(DrawContext context, int mouseX, int mouseY, BiomeAtFilter biome) {
             int rightX = editorPanelX();
             int topY = 44;
             context.drawText(textRenderer, Text.literal("Selected: " + biomeLabel(biome.biomeId)), rightX, topY + 2, 0xD0D0D0, false);
             context.drawText(textRenderer, Text.literal("Scale"), rightX, topY + 30, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Scale (cell = scale×scale blocks)"), rightX, topY + 44, 0x909090, false);
             context.drawText(textRenderer, Text.literal("X"), rightX, topY + 54, 0xD0D0D0, false);
             context.drawText(textRenderer, Text.literal("Y"), rightX, topY + 78, 0xD0D0D0, false);
             context.drawText(textRenderer, Text.literal("Z"), rightX, topY + 102, 0xD0D0D0, false);
+
+            if (isHovering(mouseX, mouseY, rightX, topY + 30, textRenderer.getWidth("Scale"), 10)
+                || isHovering(mouseX, mouseY, rightX + 52, topY + 28, 70, 18)) {
+                return "Scale controls the biome sampling level. Cubiomes expects 1 for block coordinates and 4 for biome coordinates, with larger values using coarser layers.";
+            }
+            if (isHovering(mouseX, mouseY, rightX, topY + 54, textRenderer.getWidth("X"), 10)
+                || isHovering(mouseX, mouseY, rightX + 52, topY + 52, 70, 18)) {
+                return "X is the horizontal block coordinate passed to getBiomeAt.";
+            }
+            if (isHovering(mouseX, mouseY, rightX, topY + 78, textRenderer.getWidth("Y"), 10)
+                || isHovering(mouseX, mouseY, rightX + 52, topY + 76, 70, 18)) {
+                return "Y is the vertical coordinate used for 3D biome checks and height-dependent generation.";
+            }
+            if (isHovering(mouseX, mouseY, rightX, topY + 102, textRenderer.getWidth("Z"), 10)
+                || isHovering(mouseX, mouseY, rightX + 52, topY + 100, 70, 18)) {
+                return "Z is the horizontal block coordinate passed to getBiomeAt.";
+            }
+            return null;
         }
 
-        private void drawStructureLabels(DrawContext context, StructureFilterEntry structure) {
+        private String drawStructureLabels(DrawContext context, int mouseX, int mouseY, StructureFilterEntry structure) {
             int rightX = editorPanelX();
             int topY = 44;
             context.drawText(textRenderer, Text.literal("Selected: " + structureLabel(structure.structureType)), rightX, topY + 2, 0xD0D0D0, false);
             context.drawText(textRenderer, Text.literal("Region X"), rightX, topY + 30, 0xD0D0D0, false);
             context.drawText(textRenderer, Text.literal("Region Z"), rightX, topY + 54, 0xD0D0D0, false);
             context.drawText(textRenderer, Text.literal("Min X"), rightX, topY + 78, 0xD0D0D0, false);
-            context.drawText(textRenderer, Text.literal("Max X"), rightX + 80, topY + 78, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Max X"), rightX + 140, topY + 78, 0xD0D0D0, false);
             context.drawText(textRenderer, Text.literal("Min Z"), rightX, topY + 102, 0xD0D0D0, false);
-            context.drawText(textRenderer, Text.literal("Max Z"), rightX + 80, topY + 102, 0xD0D0D0, false);
+            context.drawText(textRenderer, Text.literal("Max Z"), rightX + 140, topY + 102, 0xD0D0D0, false);
+
+            if (isHovering(mouseX, mouseY, rightX, topY + 30, textRenderer.getWidth("Region X"), 10)
+                || isHovering(mouseX, mouseY, rightX + 52, topY + 28, 70, 18)) {
+                return "Region X selects which structure-generation region is checked. Cubiomes computes one attempt per region, and the result depends on the region coordinates and the lower 48 bits of the seed.";
+            }
+            if (isHovering(mouseX, mouseY, rightX, topY + 54, textRenderer.getWidth("Region Z"), 10)
+                || isHovering(mouseX, mouseY, rightX + 52, topY + 52, 70, 18)) {
+                return "Region Z selects which structure-generation region is checked. Together with Region X, it chooses the attempt position returned by getStructurePos.";
+            }
+            if (isHovering(mouseX, mouseY, rightX, topY + 78, textRenderer.getWidth("Min X"), 10)
+                || isHovering(mouseX, mouseY, rightX + 52, topY + 76, 70, 18)) {
+                return "Min X is the lower accepted block-coordinate bound for the structure attempt.";
+            }
+            if (isHovering(mouseX, mouseY, rightX + 140, topY + 78, textRenderer.getWidth("Max X"), 10)
+                || isHovering(mouseX, mouseY, rightX + 152, topY + 76, 70, 18)) {
+                return "Max X is the upper accepted block-coordinate bound for the structure attempt.";
+            }
+            if (isHovering(mouseX, mouseY, rightX, topY + 102, textRenderer.getWidth("Min Z"), 10)
+                || isHovering(mouseX, mouseY, rightX + 52, topY + 100, 70, 18)) {
+                return "Min Z is the lower accepted block-coordinate bound for the structure attempt.";
+            }
+            if (isHovering(mouseX, mouseY, rightX + 140, topY + 102, textRenderer.getWidth("Max Z"), 10)
+                || isHovering(mouseX, mouseY, rightX + 152, topY + 100, 70, 18)) {
+                return "Max Z is the upper accepted block-coordinate bound for the structure attempt.";
+            }
+            return null;
+        }
+
+        private void drawHoverHelp(DrawContext context, int mouseX, int mouseY, String text) {
+            int padding = 4;
+            int width = Math.min(290, textRenderer.getWidth(text) + padding * 2);
+            int x = Math.min(mouseX + 12, this.width - width - 8);
+            int y = Math.min(mouseY + 12, this.height - 22);
+            context.fill(x, y, x + width, y + 18, 0xF0101010);
+            context.drawText(textRenderer, Text.literal(text), x + padding, y + 5, 0xFFFFFF, false);
+        }
+
+        private boolean isHovering(int mouseX, int mouseY, int x, int y, int width, int height) {
+            return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
         }
 
         @Override
