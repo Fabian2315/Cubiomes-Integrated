@@ -1,6 +1,3 @@
-viewer error message: [16:27:33] [Render thread/WARN]: Desktop browsing is not supported on this platform.
-    - doesnt open up 
-
 add biome and structure selectro instead of biome ids and structure names
 
 when searching for top block didnt stop at 250 passed seeds

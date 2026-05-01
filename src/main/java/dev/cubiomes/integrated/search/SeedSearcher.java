@@ -57,9 +57,6 @@ public final class SeedSearcher implements AutoCloseable {
             .collect(Collectors.toList());
 
         boolean needsMinecraftHandoff = !terrainFilters.isEmpty();
-        int stage2Budget = needsMinecraftHandoff && terrainFilters.stream().anyMatch(TerrainFilter::slowFilterWarningEnabled)
-            ? Math.max(1, terrainFilters.stream().mapToInt(TerrainFilter::javaVerificationBudget).max().orElse(64))
-            : Integer.MAX_VALUE;
 
         try (NativeCubiomes.NativeGenerator generator = NativeCubiomes.createGenerator(config.cubiomesMcVersion(), config.generatorFlags())) {
             for (long seed = config.startSeedInclusive(); seed < config.endSeedExclusive(); seed += Math.max(1, config.stride())) {
@@ -68,6 +65,7 @@ public final class SeedSearcher implements AutoCloseable {
                 }
 
                 scanned.incrementAndGet();
+                publishProgress(progressConsumer, scanned.get(), stage1Passed.get(), stage2Checked.get(), accepted.size());
                 generator.applySeed(0, seed);
 
                 if (!passesBiomeFilters(generator, biomeFilters)) {
@@ -83,10 +81,6 @@ public final class SeedSearcher implements AutoCloseable {
                 stage1Passed.incrementAndGet();
 
                 if (needsMinecraftHandoff) {
-                    if (stage2Checked.get() >= stage2Budget) {
-                        publishProgress(progressConsumer, scanned.get(), stage1Passed.get(), stage2Checked.get(), accepted.size());
-                        continue;
-                    }
                     stage2Checked.incrementAndGet();
                     if (!terrainVerifier.verifyAtSpawnTop(seed, terrainFilters)) {
                         publishProgress(progressConsumer, scanned.get(), stage1Passed.get(), stage2Checked.get(), accepted.size());

@@ -719,8 +719,8 @@ public final class CubiomesDashboardScreen extends Screen {
 
     private static final class SpawnTopBlockFilter implements EditableFilter {
         private boolean enabled = true;
-        private String blockId = "minecraft:mossy_cobblestone";
-        private int spawnRadius = 128;
+        private String blockId = "minecraft:stone";
+        private int spawnRadius = 32;
         private int minTopY = Integer.MIN_VALUE;
         private int maxTopY = Integer.MAX_VALUE;
         private int javaVerificationBudget = 64;

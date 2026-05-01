@@ -61,4 +61,4 @@ In game, press `O` to open the Cubiomes dashboard.
 
 - Native generator handles are wrapped in `AutoCloseable` and cleaned up automatically.
 - Search cancellation stops background work promptly.
-- Terrain verification currently uses a lightweight placeholder so the client stays responsive while the full block-state integration is developed.
+- Terrain verification now uses Minecraft's chunk generator with world-surface heightmap and column sampling during Stage 2 handoff.
