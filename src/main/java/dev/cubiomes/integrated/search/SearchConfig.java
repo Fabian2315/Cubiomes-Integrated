@@ -4,7 +4,6 @@ import java.util.List;
 
 import dev.cubiomes.integrated.search.filter.BiomeFilter;
 import dev.cubiomes.integrated.search.filter.StructureFilter;
-import dev.cubiomes.integrated.search.filter.TerrainFilter;
 
 public record SearchConfig(
     long startSeedInclusive,
@@ -14,14 +13,9 @@ public record SearchConfig(
     int cubiomesMcVersion,
     int generatorFlags,
     List<StructureFilter> structureFilters,
-    List<BiomeFilter> biomeFilters,
-    List<TerrainFilter> terrainFilters
+    List<BiomeFilter> biomeFilters
 ) {
     public long candidateCount() {
         return Math.max(0L, endSeedExclusive - startSeedInclusive);
-    }
-
-    public boolean requiresMinecraftHandoff() {
-        return terrainFilters.stream().anyMatch(TerrainFilter::enabled);
     }
 }

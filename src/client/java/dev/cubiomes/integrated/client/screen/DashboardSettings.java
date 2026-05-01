@@ -16,11 +16,10 @@ public final class DashboardSettings {
     private DashboardSettings() {
         filters.add(new FilterSettings("BIOME_AT", true, "biomeId=1, scale=4, x=0, y=0, z=0"));
         filters.add(new FilterSettings("STRUCTURE", true, "structure=VILLAGE, regionX=0, regionZ=0, minX=-512, maxX=512, minZ=-512, maxZ=512"));
-        filters.add(new FilterSettings("SPAWN_TOP_BLOCK", false, "block=minecraft:grass_block, radius=0, minY=-64, maxY=320, budget=32"));
     }
 
     public static class FilterSettings {
-        public String type; // BIOME_AT, STRUCTURE, SPAWN_TOP_BLOCK
+        public String type; // BIOME_AT, STRUCTURE
         public boolean enabled;
         public String data;
 

@@ -7,7 +7,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-import dev.cubiomes.integrated.client.world.MinecraftTerrainVerifier;
 import dev.cubiomes.integrated.nativebridge.NativeCubiomes;
 import dev.cubiomes.integrated.nativebridge.NativeCubiomes.StructureType;
 import dev.cubiomes.integrated.search.SearchConfig;
@@ -16,7 +15,6 @@ import dev.cubiomes.integrated.search.SearchResult;
 import dev.cubiomes.integrated.search.SeedSearcher;
 import dev.cubiomes.integrated.search.filter.BiomeFilter;
 import dev.cubiomes.integrated.search.filter.StructureFilter;
-import dev.cubiomes.integrated.search.filter.TerrainFilter;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -36,8 +34,7 @@ public final class CubiomesDashboardScreen extends Screen {
 
     private enum FilterType {
         BIOME_AT,
-        STRUCTURE,
-        SPAWN_TOP_BLOCK
+        STRUCTURE
     }
 
     private interface EditableFilter {
@@ -55,7 +52,6 @@ public final class CubiomesDashboardScreen extends Screen {
     }
 
     private final SeedSearcher searcher = new SeedSearcher();
-    private final MinecraftTerrainVerifier terrainVerifier = new MinecraftTerrainVerifier();
     private final Screen parent;
     private final DashboardSettings settings;
 
@@ -68,7 +64,7 @@ public final class CubiomesDashboardScreen extends Screen {
     private CompletableFuture<List<SearchResult>> inFlight;
     private final List<EditableFilter> filters = new ArrayList<>();
     private final List<SearchResult> results = new ArrayList<>();
-    private SearchProgress progress = new SearchProgress(0, 0, 0, 0);
+    private SearchProgress progress = new SearchProgress(0, 0, 0);
     private int selectedFilterIndex = -1;
     private int selectedResultIndex = -1;
     private boolean seedMapPopupEnabled = true;
@@ -98,11 +94,10 @@ public final class CubiomesDashboardScreen extends Screen {
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Add Biome"), b -> addFilter(new BiomeAtFilter())).dimensions(left, top + 84, 92, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Add Structure"), b -> addFilter(new StructureFilterEntry())).dimensions(left + 96, top + 84, 106, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Add Top Block"), b -> addFilter(new SpawnTopBlockFilter())).dimensions(left + 206, top + 84, 110, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Toggle"), b -> toggleSelectedFilter()).dimensions(left + 320, top + 84, 70, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Remove"), b -> removeSelectedFilter()).dimensions(left + 394, top + 84, 70, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Up"), b -> moveSelectedFilter(-1)).dimensions(left + 468, top + 84, 42, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Down"), b -> moveSelectedFilter(1)).dimensions(left + 514, top + 84, 56, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Toggle"), b -> toggleSelectedFilter()).dimensions(left + 206, top + 84, 70, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Remove"), b -> removeSelectedFilter()).dimensions(left + 280, top + 84, 70, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Up"), b -> moveSelectedFilter(-1)).dimensions(left + 354, top + 84, 42, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Down"), b -> moveSelectedFilter(1)).dimensions(left + 400, top + 84, 56, 20).build());
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Apply Selected"), b -> applySelectedFilterEdits()).dimensions(left + 526, top + 56, 112, 20).build());
 
@@ -127,16 +122,13 @@ public final class CubiomesDashboardScreen extends Screen {
         applySelectedFilterEdits();
         results.clear();
         selectedResultIndex = -1;
-        progress = new SearchProgress(0, 0, 0, 0);
+        progress = new SearchProgress(0, 0, 0);
 
         SearchConfig config = buildConfig();
-        statusText = config.requiresMinecraftHandoff()
-            ? "Search started: cubiomes prefilter + Minecraft handoff"
-            : "Search started: cubiomes-only pipeline";
+        statusText = "Search started: cubiomes pipeline";
 
         inFlight = searcher.start(
             config,
-            terrainVerifier,
             p -> progress = p,
             result -> {
                 results.add(result);
@@ -155,7 +147,6 @@ public final class CubiomesDashboardScreen extends Screen {
 
         List<BiomeFilter> biomeFilters = new ArrayList<>();
         List<StructureFilter> structureFilters = new ArrayList<>();
-        List<TerrainFilter> terrainFilters = new ArrayList<>();
 
         for (EditableFilter filter : filters) {
             if (filter instanceof BiomeAtFilter biome) {
@@ -181,19 +172,6 @@ public final class CubiomesDashboardScreen extends Screen {
                     structure.minZ,
                     structure.maxZ
                 ));
-                continue;
-            }
-
-            if (filter instanceof SpawnTopBlockFilter spawnTop) {
-                terrainFilters.add(new TerrainFilter(
-                    spawnTop.enabled,
-                    spawnTop.blockId,
-                    spawnTop.spawnRadius,
-                    spawnTop.minTopY,
-                    spawnTop.maxTopY,
-                    true,
-                    Math.max(1, spawnTop.javaVerificationBudget)
-                ));
             }
         }
 
@@ -205,8 +183,7 @@ public final class CubiomesDashboardScreen extends Screen {
             NativeCubiomes.mcVersion1211(),
             0,
             structureFilters,
-            biomeFilters,
-            terrainFilters
+            biomeFilters
         );
     }
 
@@ -339,14 +316,6 @@ public final class CubiomesDashboardScreen extends Screen {
         selectedFilterEditorField.setText(filters.get(index).toEditorString());
     }
 
-    private void initializeDefaultFilters() {
-        filters.add(new BiomeAtFilter());
-        filters.add(new StructureFilterEntry());
-        SpawnTopBlockFilter spawnTop = new SpawnTopBlockFilter();
-        spawnTop.enabled = false;
-        filters.add(spawnTop);
-    }
-
     private static Map<String, String> parseEditorMap(String editorString) {
         Map<String, String> values = new HashMap<>();
         for (String part : editorString.split(",")) {
@@ -387,7 +356,6 @@ public final class CubiomesDashboardScreen extends Screen {
         return switch (type) {
             case BIOME_AT -> "Biome";
             case STRUCTURE -> "Structure";
-            case SPAWN_TOP_BLOCK -> "Spawn Top Block";
         };
     }
 
@@ -430,24 +398,19 @@ public final class CubiomesDashboardScreen extends Screen {
         context.drawText(textRenderer, Text.literal("Edit Selected Filter (key=value, comma-separated)"), left, 80, 0xD0D0D0, false);
 
         int enabledCubiomes = 0;
-        int enabledMinecraft = 0;
         for (EditableFilter filter : filters) {
             if (!filter.enabled()) {
                 continue;
             }
-            if (filter.type() == FilterType.SPAWN_TOP_BLOCK) {
-                enabledMinecraft++;
-            } else {
-                enabledCubiomes++;
-            }
+            enabledCubiomes++;
         }
 
-        context.drawText(textRenderer, Text.literal("Pipeline: Cubiomes filters=" + enabledCubiomes + " | Minecraft handoff filters=" + enabledMinecraft), left, 140, 0xFFD37A, false);
+        context.drawText(textRenderer, Text.literal("Pipeline: Cubiomes filters=" + enabledCubiomes), left, 140, 0xFFD37A, false);
 
         int y = 408;
         context.drawText(textRenderer, Text.literal("Seeds scanned: " + progress.scanned()), left, y, 0xD0D0D0, false);
         y += 12;
-        context.drawText(textRenderer, Text.literal("Stage1 passed: " + progress.stage1Passed() + " | Stage2 checked: " + progress.stage2Checked()), left, y, 0xD0D0D0, false);
+        context.drawText(textRenderer, Text.literal("Stage1 passed: " + progress.stage1Passed()), left, y, 0xD0D0D0, false);
         y += 12;
         context.drawText(textRenderer, Text.literal("Accepted: " + progress.accepted()), left, y, 0x7CFF7C, false);
         y += 16;
@@ -606,12 +569,6 @@ public final class CubiomesDashboardScreen extends Screen {
                 filter.setEnabled(settings.enabled);
                 yield filter;
             }
-            case "SPAWN_TOP_BLOCK" -> {
-                SpawnTopBlockFilter filter = new SpawnTopBlockFilter();
-                filter.applyEditorString(settings.data);
-                filter.setEnabled(settings.enabled);
-                yield filter;
-            }
             default -> null;
         };
     }
@@ -620,7 +577,6 @@ public final class CubiomesDashboardScreen extends Screen {
         String type = switch (filter.type()) {
             case BIOME_AT -> "BIOME_AT";
             case STRUCTURE -> "STRUCTURE";
-            case SPAWN_TOP_BLOCK -> "SPAWN_TOP_BLOCK";
         };
         return new DashboardSettings.FilterSettings(type, filter.enabled(), filter.toEditorString());
     }
@@ -714,50 +670,6 @@ public final class CubiomesDashboardScreen extends Screen {
             maxX = requiredInt(values, "maxx", maxX);
             minZ = requiredInt(values, "minz", minZ);
             maxZ = requiredInt(values, "maxz", maxZ);
-        }
-    }
-
-    private static final class SpawnTopBlockFilter implements EditableFilter {
-        private boolean enabled = true;
-        private String blockId = "minecraft:stone";
-        private int spawnRadius = 32;
-        private int minTopY = Integer.MIN_VALUE;
-        private int maxTopY = Integer.MAX_VALUE;
-        private int javaVerificationBudget = 64;
-
-        @Override
-        public FilterType type() {
-            return FilterType.SPAWN_TOP_BLOCK;
-        }
-
-        @Override
-        public boolean enabled() {
-            return enabled;
-        }
-
-        @Override
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-        @Override
-        public String summary() {
-            return "block=" + blockId + " spawnRadius=" + spawnRadius + " budget=" + javaVerificationBudget;
-        }
-
-        @Override
-        public String toEditorString() {
-            return "block=" + blockId + ", radius=" + spawnRadius + ", minY=" + minTopY + ", maxY=" + maxTopY + ", budget=" + javaVerificationBudget;
-        }
-
-        @Override
-        public void applyEditorString(String editorString) {
-            Map<String, String> values = parseEditorMap(editorString);
-            blockId = requiredString(values, "block", blockId);
-            spawnRadius = Math.max(0, requiredInt(values, "radius", spawnRadius));
-            minTopY = requiredInt(values, "miny", minTopY);
-            maxTopY = requiredInt(values, "maxy", maxTopY);
-            javaVerificationBudget = Math.max(1, requiredInt(values, "budget", javaVerificationBudget));
         }
     }
 
