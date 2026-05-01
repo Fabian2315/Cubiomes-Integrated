@@ -119,7 +119,6 @@ public final class CubiomesDashboardScreen extends Screen {
 
     private void startSearch() {
         cancelSearch();
-        applySelectedFilterEdits();
         results.clear();
         selectedResultIndex = -1;
         progress = new SearchProgress(0, 0, 0);
@@ -473,13 +472,13 @@ public final class CubiomesDashboardScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         boolean handled = super.mouseClicked(mouseX, mouseY, button);
 
-        int clickedFilter = rowAt(mouseX, mouseY, FILTER_LIST_X, FILTER_LIST_Y, FILTER_ROW_HEIGHT, FILTER_ROWS_VISIBLE, filters.size());
+        int clickedFilter = rowAt(mouseX, mouseY, FILTER_LIST_X, FILTER_LIST_Y, 420, FILTER_ROW_HEIGHT, FILTER_ROWS_VISIBLE, filters.size());
         if (clickedFilter >= 0) {
             selectFilter(clickedFilter);
             return true;
         }
 
-        int clickedResult = rowAt(mouseX, mouseY, RESULTS_X, RESULTS_Y, RESULTS_ROW_HEIGHT, RESULTS_VISIBLE, results.size());
+        int clickedResult = rowAt(mouseX, mouseY, RESULTS_X, RESULTS_Y, 420, RESULTS_ROW_HEIGHT, RESULTS_VISIBLE, results.size());
         if (clickedResult >= 0) {
             selectedResultIndex = clickedResult;
             openSeedMapForSelection();
@@ -489,8 +488,8 @@ public final class CubiomesDashboardScreen extends Screen {
         return handled;
     }
 
-    private static int rowAt(double mouseX, double mouseY, int x, int y, int rowHeight, int visibleRows, int rowCount) {
-        if (mouseX < x || mouseX > x + 420) {
+    private static int rowAt(double mouseX, double mouseY, int x, int y, int width, int rowHeight, int visibleRows, int rowCount) {
+        if (mouseX < x || mouseX > x + width) {
             return -1;
         }
         if (mouseY < y || mouseY > y + (visibleRows * rowHeight)) {
@@ -770,9 +769,16 @@ public final class CubiomesDashboardScreen extends Screen {
             this.creatingNewFilter = creatingNewFilter;
         }
 
+        private TextFieldWidget addField(int x, int y, int width, String value) {
+            TextFieldWidget field = new TextFieldWidget(textRenderer, x, y, width, 18, Text.empty());
+            field.setText(value);
+            addDrawableChild(field);
+            return field;
+        }
+
         @Override
         protected void init() {
-            int rightX = 292;
+            int rightX = editorPanelX();
             int topY = 44;
 
             addDrawableChild(ButtonWidget.builder(Text.literal("Save"), button -> saveChanges()).dimensions(width - 214, 16, 100, 20).build());
@@ -849,7 +855,7 @@ public final class CubiomesDashboardScreen extends Screen {
         }
 
         private void drawBiomeLabels(DrawContext context, BiomeAtFilter biome) {
-            int rightX = 292;
+            int rightX = editorPanelX();
             int topY = 44;
             context.drawText(textRenderer, Text.literal("Selected: " + biomeLabel(biome.biomeId)), rightX, topY + 2, 0xD0D0D0, false);
             context.drawText(textRenderer, Text.literal("Scale"), rightX, topY + 30, 0xD0D0D0, false);
@@ -859,7 +865,7 @@ public final class CubiomesDashboardScreen extends Screen {
         }
 
         private void drawStructureLabels(DrawContext context, StructureFilterEntry structure) {
-            int rightX = 292;
+            int rightX = editorPanelX();
             int topY = 44;
             context.drawText(textRenderer, Text.literal("Selected: " + structureLabel(structure.structureType)), rightX, topY + 2, 0xD0D0D0, false);
             context.drawText(textRenderer, Text.literal("Region X"), rightX, topY + 30, 0xD0D0D0, false);
@@ -872,8 +878,12 @@ public final class CubiomesDashboardScreen extends Screen {
 
         @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            if (super.mouseClicked(mouseX, mouseY, button)) {
+                return true;
+            }
+
             if (workingFilter instanceof BiomeAtFilter) {
-                int clicked = rowAt(mouseX, mouseY, LIST_X, LIST_Y, LIST_ROW_HEIGHT, LIST_ROWS, biomeOptions.size());
+                int clicked = rowAt(mouseX, mouseY, LIST_X, LIST_Y, LIST_WIDTH, LIST_ROW_HEIGHT, LIST_ROWS, biomeOptions.size());
                 if (clicked >= 0) {
                     selectedBiomeIndex = biomeScrollIndex + clicked;
                     selectedBiomeIndex = Math.max(0, Math.min(selectedBiomeIndex, biomeOptions.size() - 1));
@@ -883,7 +893,7 @@ public final class CubiomesDashboardScreen extends Screen {
                     return true;
                 }
             } else if (workingFilter instanceof StructureFilterEntry) {
-                int clicked = rowAt(mouseX, mouseY, LIST_X, LIST_Y, LIST_ROW_HEIGHT, LIST_ROWS, structureOptions.size());
+                int clicked = rowAt(mouseX, mouseY, LIST_X, LIST_Y, LIST_WIDTH, LIST_ROW_HEIGHT, LIST_ROWS, structureOptions.size());
                 if (clicked >= 0) {
                     selectedStructureIndex = structureScrollIndex + clicked;
                     selectedStructureIndex = Math.max(0, Math.min(selectedStructureIndex, structureOptions.size() - 1));
@@ -945,6 +955,8 @@ public final class CubiomesDashboardScreen extends Screen {
                     filters.set(selectedFilterIndex, workingFilter.copy());
                 }
 
+                saveSettingsFromUI();
+                settings.save();
                 statusText = "Updated filter: " + typeLabel(workingFilter.type());
                 closeEditor();
             } catch (IllegalArgumentException exception) {
@@ -969,9 +981,13 @@ public final class CubiomesDashboardScreen extends Screen {
             }
         }
 
+        private void commitAndClose() {
+            saveChanges();
+        }
+
         @Override
         public void close() {
-            closeEditor();
+            commitAndClose();
         }
 
         private int findBiomeIndex(int biomeId) {
@@ -995,6 +1011,10 @@ public final class CubiomesDashboardScreen extends Screen {
         private int clampScroll(int scrollIndex, int optionCount) {
             int maxScroll = Math.max(0, optionCount - LIST_ROWS);
             return Math.max(0, Math.min(maxScroll, scrollIndex));
+        }
+
+        private int editorPanelX() {
+            return Math.min(292, Math.max(16, width - 220));
         }
     }
 
